@@ -110,8 +110,7 @@ struct DebugStreamView: View {
     @State private var model = DebugStreamModel()
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
                 Section("Receiver") {
                     TextField("IP address", text: $model.host)
                         .keyboardType(.decimalPad)
@@ -142,12 +141,12 @@ struct DebugStreamView: View {
                     ProgressView(value: Double(min(1, model.rms * 4)))
                 }
                 .monospacedDigit()
-            }
-            .navigationTitle("AirMic debug")
         }
+        .navigationTitle("Debug stream")
+        .onDisappear { if model.isRunning { model.stop() } }
     }
 }
 
 #Preview {
-    DebugStreamView()
+    NavigationStack { DebugStreamView() }
 }
