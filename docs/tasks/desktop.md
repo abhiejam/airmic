@@ -105,9 +105,12 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 Done when: phone discovers the PC, pairs with the code, reconnects with its token; `airmic-send` covers the same in tests.
 
 ## D5 · Desktop app (Tauri)
-- [ ] **D5.1** Scaffold Tauri v2 + React + TS + Vite in `desktop/app`
+- [x] **D5.1** Scaffold Tauri v2 + React + TS + Vite in `desktop/app`
+  - `desktop/app/src-tauri` has its own `[workspace]`, so the daemon's `cargo ... --workspace` CI does not need the webkit libraries. App CI is the `app` job in `desktop.yml`.
+  - Run: `cd desktop/app && npm ci && npm run tauri dev`.
 - [ ] **D5.2** Rust side: IPC client to `airmicd`, events to the web UI
-- [ ] **D5.3** Design tokens matching the phone (system sans, cream / dark, indigo accent)
+- [x] **D5.3** Design tokens matching the phone (system sans, cream / dark, indigo accent)
+  - `src/theme.css` copies the values in `ios/AirMic/UI/Theme.swift`, including increase-contrast. There are no desktop mockups in the design canvas (phone only), so the desktop screens follow PRD §8.3.
 - [ ] **D5.4** Status screen: phone name, live level meter, latency, loss, "default mic" check + fix button
 - [ ] **D5.5** Pair screen: QR code + 4 digit code, paired phones list, forget
 - [ ] **D5.6** Settings: start at login, set as default mic, ports, transcription toggle and model
