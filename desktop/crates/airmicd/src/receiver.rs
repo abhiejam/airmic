@@ -102,9 +102,11 @@ mod tests {
     fn session() -> Session {
         Session {
             id: 7,
+            phone_id: "p1".into(),
             phone_addr: "192.168.1.20".parse().unwrap(),
             phone_name: "iPhone".into(),
             muted: false,
+            stats: None,
         }
     }
 

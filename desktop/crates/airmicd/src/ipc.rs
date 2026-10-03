@@ -18,9 +18,9 @@ use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 use tracing::{info, warn};
 
 use crate::config::Config;
-use crate::control::Session;
+use crate::control::{Session, StreamStats};
 use crate::receiver::LastPacket;
-use crate::sink::{DefaultSource, Level, SharedBuffer};
+use crate::sink::{DefaultSource, Level};
 
 const MAX_LINE: usize = 64 * 1024;
 const POLL_EVERY: Duration = Duration::from_secs(1);
@@ -118,13 +118,6 @@ struct Phone {
     addr: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct StreamStats {
-    loss_pct: f64,
-    jitter_ms: f64,
-    latency_ms: f64,
-}
-
 struct RpcError {
     code: i64,
     message: String,
@@ -162,7 +155,6 @@ struct SubscribeParams {
 /// State shared by every app connection.
 pub struct Ipc {
     session: watch::Receiver<Option<Session>>,
-    buffer: SharedBuffer,
     level: Arc<Level>,
     last_packet: LastPacket,
     default_source: Box<dyn DefaultSource>,
@@ -176,7 +168,6 @@ pub struct Ipc {
 impl Ipc {
     pub fn new(
         session: watch::Receiver<Option<Session>>,
-        buffer: SharedBuffer,
         level: Arc<Level>,
         last_packet: LastPacket,
         default_source: Box<dyn DefaultSource>,
@@ -185,7 +176,6 @@ impl Ipc {
     ) -> Arc<Ipc> {
         let ipc = Arc::new(Ipc {
             session,
-            buffer,
             level,
             last_packet,
             default_source,
@@ -209,20 +199,6 @@ impl Ipc {
                 ..idle_status()
             };
         };
-        let stats = {
-            let jb = self.buffer.lock().expect("jitter buffer lock");
-            let s = jb.stats();
-            let expected = s.received + s.lost;
-            StreamStats {
-                loss_pct: if expected == 0 {
-                    0.0
-                } else {
-                    s.lost as f64 * 100.0 / expected as f64
-                },
-                jitter_ms: s.jitter_ms,
-                latency_ms: jb.delay_ms(),
-            }
-        };
         Status {
             state: if session.muted {
                 State::Muted
@@ -230,12 +206,12 @@ impl Ipc {
                 State::Streaming
             },
             phone: Some(Phone {
-                // `Session` carries no phone id yet; pairing (D3.3) has to add it.
-                id: String::new(),
+                id: session.phone_id,
                 name: session.phone_name,
                 addr: session.phone_addr.to_string(),
             }),
-            stats: Some(stats),
+            // Null until the first 2 s stats window closes.
+            stats: session.stats,
             audio_flowing,
             is_default_source,
             version: env!("CARGO_PKG_VERSION"),
@@ -444,7 +420,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
-    use crate::jitter::JitterBuffer;
 
     type Client = Framed<UnixStream, LinesCodec>;
 
@@ -474,7 +449,6 @@ mod tests {
         let (level, last_packet) = (Arc::new(Level::default()), LastPacket::default());
         let ipc = Ipc::new(
             session_rx,
-            Arc::new(Mutex::new(JitterBuffer::new())),
             level.clone(),
             last_packet.clone(),
             Box::new(FakeDefault(Arc::default())),
@@ -499,9 +473,11 @@ mod tests {
         fn start_session(&self, muted: bool) {
             self.session.send_replace(Some(Session {
                 id: 7,
+                phone_id: "p1".into(),
                 phone_addr: "192.168.1.20".parse().unwrap(),
                 phone_name: "iPhone".into(),
                 muted,
+                stats: None,
             }));
         }
     }
@@ -637,10 +613,23 @@ mod tests {
         call(&mut app, "subscribe", json!({"topics": ["status"]})).await;
         daemon.start_session(true);
         let status = recv_status(&mut app, |s| s["state"] == "muted").await;
+        assert_eq!(status["phone"]["id"], "p1");
         assert_eq!(status["phone"]["name"], "iPhone");
         assert_eq!(status["phone"]["addr"], "192.168.1.20");
-        assert_eq!(status["stats"]["loss_pct"], 0.0);
+        assert_eq!(status["stats"], Value::Null, "no stats window yet");
         assert_eq!(status["audio_flowing"], false);
+
+        // The control server publishes each window it sends the phone; IPC serves the same numbers.
+        let window = StreamStats {
+            loss_pct: 5.0,
+            jitter_ms: 3.0,
+            latency_ms: 55.0,
+        };
+        daemon
+            .session
+            .send_modify(|s| s.as_mut().unwrap().stats = Some(window));
+        let status = recv_status(&mut app, |s| !s["stats"].is_null()).await;
+        assert_eq!(status["stats"], json!(window));
 
         *daemon.last_packet.lock().unwrap() = Some(std::time::Instant::now());
         recv_status(&mut app, |s| s["audio_flowing"] == true).await;
@@ -679,10 +668,18 @@ mod tests {
         call(&mut tray, "subscribe", json!({"topics": ["level"]})).await;
         daemon.start_session(false);
         recv_status(&mut window, |s| s["state"] == "streaming").await;
-        // A JSON-RPC notification gets no reply, so the next line the tray sees is its reply to id 1.
-        tray.send(r#"{"jsonrpc":"2.0","method":"status"}"#)
-            .await
-            .unwrap();
-        call(&mut tray, "get_settings", Value::Null).await;
+        // The tray streams `level` lines meanwhile, so read past them to the reply, and fail on any `status`.
+        let request = json!({"jsonrpc": "2.0", "id": 1, "method": "get_settings"});
+        tray.send(request.to_string()).await.unwrap();
+        loop {
+            let msg = recv(&mut tray).await;
+            assert_ne!(
+                msg["method"], "status",
+                "the tray did not subscribe to status"
+            );
+            if msg["id"] == 1 {
+                break;
+            }
+        }
     }
 }

@@ -23,9 +23,19 @@ const PEER_TIMEOUT: Duration = Duration::from_secs(6);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Session {
     pub id: u32,
+    pub phone_id: String,
     pub phone_addr: IpAddr,
     pub phone_name: String,
     pub muted: bool,
+    /// The last 2 s window sent to the phone, so the desktop app shows the same numbers.
+    pub stats: Option<StreamStats>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize)]
+pub struct StreamStats {
+    pub loss_pct: f64,
+    pub jitter_ms: f64,
+    pub latency_ms: f64,
 }
 
 pub type SessionTx = watch::Sender<Option<Session>>;
@@ -126,8 +136,20 @@ async fn handle_phone(
                     };
                     // The first tick after `ready` only opens the window.
                     if let Some(start) = window_start.replace(stats) {
-                        let msg = build_stats_message(start, stats, delay_ms, round_trip);
+                        let window = build_stream_stats(start, stats, delay_ms, round_trip);
+                        let msg = Message::Stats {
+                            loss_pct: window.loss_pct,
+                            jitter_ms: window.jitter_ms,
+                            latency_ms: window.latency_ms,
+                        };
                         conn.send(msg.to_line().trim_end()).await?;
+                        session.send_if_modified(|s| match s {
+                            Some(s) if Some(s.id) == *session_id => {
+                                s.stats = Some(window);
+                                true
+                            }
+                            _ => false,
+                        });
                     }
                 }
                 continue;
@@ -154,9 +176,12 @@ async fn handle_phone(
                     return reject(&mut conn, ErrorCode::UnsupportedVersion, &why).await;
                 }
                 let known = pairing.lock().expect("pairing lock").is_known(&phone_id);
-                phone = Some((phone_id, phone_name.clone()));
                 if opts.no_auth {
-                    start_session(&mut conn, peer, &phone_name, opts, session, session_id).await?;
+                    let phone = (phone_id.as_str(), phone_name.as_str());
+                    start_session(&mut conn, peer, phone, opts, session, session_id).await?;
+                }
+                phone = Some((phone_id, phone_name));
+                if opts.no_auth {
                     None
                 } else if known {
                     // A known phone sends `auth` right after `hello`.
@@ -185,8 +210,8 @@ async fn handle_phone(
                     .expect("pairing lock")
                     .is_token_valid(phone_id, &token);
                 if valid {
-                    let name = phone_name.clone();
-                    start_session(&mut conn, peer, &name, opts, session, session_id).await?;
+                    let phone = (phone_id.as_str(), phone_name.as_str());
+                    start_session(&mut conn, peer, phone, opts, session, session_id).await?;
                     None
                 } else if pair_required_sent {
                     None
@@ -203,10 +228,10 @@ async fn handle_phone(
                     .pair(&code, phone_id, phone_name, now)?;
                 match outcome {
                     PairOutcome::Paired { token } => {
-                        let name = phone_name.clone();
                         let paired = Message::Paired { token };
                         conn.send(paired.to_line().trim_end()).await?;
-                        start_session(&mut conn, peer, &name, opts, session, session_id).await?;
+                        let phone = (phone_id.as_str(), phone_name.as_str());
+                        start_session(&mut conn, peer, phone, opts, session, session_id).await?;
                         None
                     }
                     PairOutcome::BadCode => Some(Message::Error {
@@ -241,15 +266,15 @@ async fn handle_phone(
     }
 }
 
-/// Returns `stats` for the window from `start` to `end` (docs/protocol.md §2.5).
+/// Returns the stats for the window from `start` to `end` (docs/protocol.md §2.5).
 /// The receiver replaces the jitter buffer when a new session's audio starts, so counters that
 /// went backwards mean the window started at zero.
-fn build_stats_message(
+fn build_stream_stats(
     start: Stats,
     end: Stats,
     delay_ms: f64,
     round_trip: Option<Duration>,
-) -> Message {
+) -> StreamStats {
     let start = if end.received < start.received {
         Stats::default()
     } else {
@@ -263,7 +288,7 @@ fn build_stats_message(
         100.0 * lost as f64 / expected as f64
     };
     let half_rtt_ms = round_trip.map_or(0.0, |rtt| rtt.as_secs_f64() * 1e3 / 2.0);
-    Message::Stats {
+    StreamStats {
         loss_pct,
         jitter_ms: end.jitter_ms,
         latency_ms: half_rtt_ms + delay_ms,
@@ -286,16 +311,18 @@ fn request_pairing(pairing: &SharedPairing) -> Message {
 async fn start_session(
     conn: &mut Conn,
     peer: SocketAddr,
-    phone_name: &str,
+    (phone_id, phone_name): (&str, &str),
     opts: &ControlOptions,
     session: &SessionTx,
     session_id: &mut Option<u32>,
 ) -> anyhow::Result<()> {
     let new = Session {
         id: rand::random::<u32>().max(1),
+        phone_id: phone_id.to_string(),
         phone_addr: peer.ip().to_canonical(),
         phone_name: phone_name.to_string(),
         muted: false,
+        stats: None,
     };
     let id = new.id;
     let claimed = session.send_if_modified(|s| {
@@ -590,7 +617,7 @@ mod tests {
 
     #[tokio::test]
     async fn ready_session_gets_stats_with_every_ping() {
-        let (addr, _rx, _) = start_daemon(true).await;
+        let (addr, rx, _) = start_daemon(true).await;
         let (mut phone, _) = open_session(addr).await;
         // Real time (about 4 s): the paused clock jumps while bytes are in flight and times out the phone.
         let mut pings_since_stats = Vec::new();
@@ -617,6 +644,11 @@ mod tests {
             }
         }
         assert_eq!(pings_since_stats[1], 1, "one stats per ping");
+        let published = rx.borrow().as_ref().and_then(|s| s.stats);
+        assert!(
+            published.is_some_and(|w| w.jitter_ms == 5.0),
+            "session carries the last window"
+        );
     }
 
     #[test]
@@ -628,24 +660,17 @@ mod tests {
             ..Stats::default()
         };
         let rtt = Some(Duration::from_millis(30));
-        let msg = build_stats_message(stats(100, 50), stats(290, 60), 40.0, rtt);
-        let expected = Message::Stats {
+        let window = build_stream_stats(stats(100, 50), stats(290, 60), 40.0, rtt);
+        let expected = StreamStats {
             loss_pct: 5.0,
             jitter_ms: 3.0,
             latency_ms: 55.0,
         };
-        assert_eq!(msg, expected);
+        assert_eq!(window, expected);
         // A new session replaced the buffer, so its counters restarted at zero.
-        let msg = build_stats_message(stats(500, 20), stats(95, 5), 40.0, rtt);
-        assert_eq!(msg, expected);
-        let msg = build_stats_message(stats(7, 1), stats(7, 1), 0.0, None);
-        assert!(matches!(
-            msg,
-            Message::Stats {
-                loss_pct: 0.0,
-                latency_ms: 0.0,
-                ..
-            }
-        ));
+        let window = build_stream_stats(stats(500, 20), stats(95, 5), 40.0, rtt);
+        assert_eq!(window, expected);
+        let window = build_stream_stats(stats(7, 1), stats(7, 1), 0.0, None);
+        assert_eq!((window.loss_pct, window.latency_ms), (0.0, 0.0));
     }
 }

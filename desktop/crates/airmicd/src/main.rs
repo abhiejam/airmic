@@ -93,7 +93,6 @@ async fn main() -> anyhow::Result<()> {
     let (session_tx, session_rx) = watch::channel(None);
     let ipc = ipc::Ipc::new(
         session_rx.clone(),
-        buffer.clone(),
         level,
         last_packet.clone(),
         Box::new(PipeWireDefault),
