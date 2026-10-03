@@ -216,7 +216,7 @@ Visual system: SF Pro (system font), cream `#F6F2EA` light / `#111114` dark, acc
 - **PipeWire output:** `pipewire` crate (pipewire-rs). Creates a node with `media.class = Audio/Source/Virtual`, `node.name = airmic`, `node.description = AirMic`. When no phone is connected it outputs silence, so apps never lose the device.
 - **Default device:** on start, sets AirMic as the default source by name (PipeWire metadata `default.configured.audio.source`), configurable. Node ids change across restarts, so the name is the stable key.
 - **mDNS:** advertises via Avahi (`zeroconf` or `mdns-sd` crate).
-- **IPC:** Unix socket `$XDG_RUNTIME_DIR/airmic.sock`, JSON-RPC: `status`, `level` stream, `pairing_code`, `paired_devices`, `forget_device`, `transcript` stream, `settings`.
+- **IPC:** Unix socket `$XDG_RUNTIME_DIR/airmic.sock`, JSON-RPC: `status`, `level` stream, `pairing_code`, `paired_devices`, `forget_device`, `transcript` stream, `settings`. Contract: [`ipc.md`](ipc.md).
 - **Config:** `~/.config/airmic/config.toml` (ports, default device, transcription on/off, model).
 - **Logs:** journald.
 
