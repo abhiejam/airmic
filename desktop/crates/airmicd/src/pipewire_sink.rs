@@ -9,16 +9,13 @@ use spa::param::audio::{AudioFormat, AudioInfoRaw, MAX_CHANNELS};
 use spa::pod::{Object, Pod, Value, serialize::PodSerializer};
 use tracing::{info, warn};
 
-use std::sync::Arc;
-
-use crate::sink::{AudioSink, DefaultSource, Level, LevelMeter, SharedBuffer};
+use crate::sink::{AudioSink, DefaultSource, SharedBuffer};
 
 pub const NODE_NAME: &str = "airmic";
 const DEFAULT_SOURCE_KEY: &str = "default.configured.audio.source";
 
 pub struct PipeWireSink {
     pub set_default_source: bool,
-    pub level: Arc<Level>,
 }
 
 impl AudioSink for PipeWireSink {
@@ -45,9 +42,9 @@ impl AudioSink for PipeWireSink {
         // Scratch space allocated once, because `process` runs on the real-time thread.
         let scratch: Vec<i16> = Vec::with_capacity(16 * 1024);
         let _listener = stream
-            .add_local_listener_with_user_data((buffer, scratch, self.level, LevelMeter::default()))
+            .add_local_listener_with_user_data((buffer, scratch))
             .state_changed(|_, _, old, new| info!("PipeWire stream {old:?} -> {new:?}"))
-            .process(|stream, (buffer, scratch, level, meter)| {
+            .process(|stream, (buffer, scratch)| {
                 let Some(mut pw_buffer) = stream.dequeue_buffer() else {
                     return;
                 };
@@ -63,7 +60,6 @@ impl AudioSink for PipeWireSink {
                     Ok(mut jb) => jb.read(scratch),
                     Err(_) => scratch.fill(0),
                 }
-                meter.add(scratch, level);
                 for (dst, s) in bytes.as_chunks_mut::<2>().0.iter_mut().zip(scratch.iter()) {
                     *dst = s.to_le_bytes();
                 }

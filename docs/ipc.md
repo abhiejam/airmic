@@ -77,7 +77,7 @@ Sent only for subscribed topics.
 | Method | Params | When |
 |---|---|---|
 | `status` | `Status` | Whenever any `Status` field except `stats` changes, and every 2 s while streaming. |
-| `level` | `{rms: number, peak: number}` | About 20 per second while streaming. Both are 0–1 over the last 50 ms of output. |
+| `level` | `{rms: number, peak: number}` | About 20 per second while streaming. Both are 0–1 over the last 50 ms of audio received from the phone, whether or not an app is recording. 0 when muted or when packets stop. |
 | `transcript` | `{text: string, final: boolean}` | Same meaning as the phone `transcript` message. |
 
 ## 5. Errors

@@ -25,8 +25,8 @@ use crate::control::ControlOptions;
 use crate::jitter::JitterBuffer;
 use crate::pairing::Pairing;
 use crate::pipewire_sink::{PipeWireDefault, PipeWireSink};
-use crate::receiver::LastPacket;
-use crate::sink::{AudioSink, Level};
+use crate::receiver::{LastPacket, Level};
+use crate::sink::AudioSink;
 
 /// AirMic daemon: receives audio from the iPhone app and exposes it as a microphone.
 #[derive(Parser)]
@@ -78,7 +78,6 @@ async fn main() -> anyhow::Result<()> {
     let last_packet = LastPacket::default();
     let sink: Box<dyn AudioSink> = Box::new(PipeWireSink {
         set_default_source: config.set_default_source,
-        level: level.clone(),
     });
     let (sink_failed_tx, sink_failed) = oneshot::channel();
     let sink_buffer = buffer.clone();
@@ -93,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
     let (session_tx, session_rx) = watch::channel(None);
     let ipc = ipc::Ipc::new(
         session_rx.clone(),
-        level,
+        level.clone(),
         last_packet.clone(),
         Box::new(PipeWireDefault),
         config_path,
@@ -106,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         _ = control::serve(listener, opts, session_tx, pairing, buffer.clone()) => {}
         _ = ipc::serve(ipc_listener, ipc) => {}
-        _ = receiver::receive(udp, session_rx.clone(), buffer.clone(), last_packet) => {}
+        _ = receiver::receive(udp, session_rx.clone(), buffer.clone(), last_packet, level) => {}
         _ = receiver::log_stats(session_rx, buffer) => {}
         result = sink_failed => return result.context("audio output thread died")?,
         _ = tokio::signal::ctrl_c() => info!("shutting down"),
