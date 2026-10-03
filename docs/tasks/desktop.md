@@ -42,13 +42,16 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [x] **D2.3** `airmic-send` CLI: stream a sine tone or WAV with the real protocol; flags for loss %, jitter ms, reorder
 - [x] **D2.4** `airmicd` skeleton: tokio, `config.toml` (`directories` crate for paths), tracing to journald
   - Logs go to stderr, which journald captures under systemd (no time prefix there). No journald crate.
-- [ ] **D2.5** UDP receiver on 47801: validate magic, version, session id
+- [x] **D2.5** UDP receiver on 47801: validate magic, version, session id
 - [x] **D2.6** Jitter buffer: reorder by sequence, adaptive 20–120 ms target, silence + short fade on loss, stats (loss, jitter)
   - Pull model: the sink reads samples at its own clock. Clock drift is absorbed by dropping frames above target + 40 ms and rebuffering on underrun. Target = 20 ms + 4 × jitter, clamped to 20–120 ms.
 - [x] **D2.7** Jitter buffer tests: loss, duplicates, reorder, late packets, sequence wrap
-- [ ] **D2.8** `AudioSink` trait (write frames, report underruns)
-- [ ] **D2.9** PipeWire backend: virtual source `node.name=airmic`, `node.description=AirMic`, silence when no phone
+- [x] **D2.8** `AudioSink` trait (write frames, report underruns)
+  - Pull model: `AudioSink::run` reads from the jitter buffer at the device clock, so it has no `write`. Underruns are counted in the jitter buffer stats.
+- [x] **D2.9** PipeWire backend: virtual source `node.name=airmic`, `node.description=AirMic`, silence when no phone
+  - `media.class` is `Audio/Source`, not `Audio/Source/Virtual`: WirePlumber 0.4.17 (Ubuntu 24.04) never creates ports for the virtual class. Requests 10 ms periods (`node.latency=480/48000`).
 - [ ] **D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)
+  - Not needed so far: pipewire-rs 0.10 works on PipeWire 1.0.5.
 - [ ] **D2.11** Set AirMic as default source by name on start (configurable)
 - [ ] **D2.12** systemd user unit `packaging/airmicd.service`, start on login
 
