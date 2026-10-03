@@ -62,13 +62,14 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 ## D3 · Control, discovery, pairing
 - [x] **D3.1** Control server TCP 47800: `hello`, `ready`, `ping/pong`, `mute`, `bye`, with `--no-auth` flag → **S2**
   - `--no-auth` skips pairing (development only).
-- [ ] **D3.2** Periodic `stats` to the phone every 2 s
+- [x] **D3.2** Periodic `stats` to the phone every 2 s
+  - Sent with each ping once the session is ready. With no consumer on the "AirMic" source the buffer fills to its 1 s cap, so `latency_ms` reads about 1000 until something records.
 - [x] **D3.3** Pairing: 4 digit code (2 min, 5 attempts), 128 bit tokens, `~/.config/airmic/paired.json` → **S3**
   - Until D3.7, a `pair_required` issues a code and the daemon logs it. After a lockout only a new code from IPC (or a daemon restart) unlocks. A code pairs one phone, then is retired.
 - [x] **D3.4** mDNS advert `_airmic._tcp` with TXT `id`, `name`, `v` (`mdns-sd` crate) → **S3**
   - Computer id is a UUID v4 kept in `~/.config/airmic/device_id`; instance name is the hostname.
 - [x] **D3.5** One active phone at a time; new phone gets a clear "busy" error
-- [ ] **D3.6** Mute flag and header-only packets → silence output
+- [x] **D3.6** Mute flag and header-only packets → silence output
 - [ ] **D3.7** IPC server behind a trait (Unix socket `$XDG_RUNTIME_DIR/airmic.sock`), JSON-RPC: `status`, `level`, `pairing_code`, `paired_devices`, `forget_device`, `settings`
   - Contract in `docs/ipc.md` (adds `make_default`, `subscribe`; `settings` split into get/set). The app (D5) builds against it in parallel.
 

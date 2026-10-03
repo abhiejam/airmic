@@ -11,7 +11,9 @@ use tokio::time::{Instant, interval};
 use tokio_util::codec::{Framed, LinesCodec};
 use tracing::{info, warn};
 
+use crate::jitter::Stats;
 use crate::pairing::{PairOutcome, SharedPairing};
+use crate::sink::SharedBuffer;
 
 const MAX_LINE: usize = 64 * 1024;
 const PING_EVERY: Duration = Duration::from_secs(2);
@@ -42,6 +44,7 @@ pub async fn serve(
     opts: ControlOptions,
     session: SessionTx,
     pairing: SharedPairing,
+    buffer: SharedBuffer,
 ) {
     loop {
         let (stream, peer) = match listener.accept().await {
@@ -51,10 +54,19 @@ pub async fn serve(
                 continue;
             }
         };
-        let (opts, session, pairing) = (opts.clone(), session.clone(), pairing.clone());
+        let (opts, session) = (opts.clone(), session.clone());
+        let (pairing, buffer) = (pairing.clone(), buffer.clone());
         tokio::spawn(async move {
             let mut session_id = None;
-            let phone = handle_phone(stream, peer, &opts, &session, &pairing, &mut session_id);
+            let phone = handle_phone(
+                stream,
+                peer,
+                &opts,
+                &session,
+                &pairing,
+                &buffer,
+                &mut session_id,
+            );
             if let Err(e) = phone.await {
                 info!(%peer, "control connection ended: {e}");
             }
@@ -82,6 +94,7 @@ async fn handle_phone(
     opts: &ControlOptions,
     session: &SessionTx,
     pairing: &SharedPairing,
+    buffer: &SharedBuffer,
     session_id: &mut Option<u32>,
 ) -> anyhow::Result<()> {
     let mut conn = Framed::new(stream, LinesCodec::new_with_max_length(MAX_LINE));
@@ -90,6 +103,9 @@ async fn handle_phone(
     // (phone_id, phone_name) from the first hello.
     let mut phone: Option<(String, String)> = None;
     let mut pair_required_sent = false;
+    let mut ping_sent = None;
+    let mut round_trip = None;
+    let mut window_start: Option<Stats> = None;
 
     loop {
         let line = tokio::select! {
@@ -102,6 +118,18 @@ async fn handle_phone(
                     anyhow::bail!("peer timed out");
                 }
                 conn.send(Message::Ping.to_line().trim_end()).await?;
+                ping_sent = Some(Instant::now());
+                if session_id.is_some() {
+                    let (stats, delay_ms) = {
+                        let jb = buffer.lock().expect("jitter buffer lock");
+                        (jb.stats(), jb.delay_ms())
+                    };
+                    // The first tick after `ready` only opens the window.
+                    if let Some(start) = window_start.replace(stats) {
+                        let msg = build_stats_message(start, stats, delay_ms, round_trip);
+                        conn.send(msg.to_line().trim_end()).await?;
+                    }
+                }
                 continue;
             }
         };
@@ -142,6 +170,10 @@ async fn handle_phone(
                 return reject(&mut conn, ErrorCode::BadMessage, "expected hello").await;
             }
             (Message::Ping, _) => Some(Message::Pong),
+            (Message::Pong, _) => {
+                round_trip = ping_sent.take().map(|sent: Instant| sent.elapsed());
+                None
+            }
             (Message::Auth { .. } | Message::Pair { .. }, _)
                 if opts.no_auth || session_id.is_some() =>
             {
@@ -209,6 +241,35 @@ async fn handle_phone(
     }
 }
 
+/// Returns `stats` for the window from `start` to `end` (docs/protocol.md §2.5).
+/// The receiver replaces the jitter buffer when a new session's audio starts, so counters that
+/// went backwards mean the window started at zero.
+fn build_stats_message(
+    start: Stats,
+    end: Stats,
+    delay_ms: f64,
+    round_trip: Option<Duration>,
+) -> Message {
+    let start = if end.received < start.received {
+        Stats::default()
+    } else {
+        start
+    };
+    let lost = end.lost.saturating_sub(start.lost);
+    let expected = end.received.saturating_sub(start.received) + lost;
+    let loss_pct = if expected == 0 {
+        0.0
+    } else {
+        100.0 * lost as f64 / expected as f64
+    };
+    let half_rtt_ms = round_trip.map_or(0.0, |rtt| rtt.as_secs_f64() * 1e3 / 2.0);
+    Message::Stats {
+        loss_pct,
+        jitter_ms: end.jitter_ms,
+        latency_ms: half_rtt_ms + delay_ms,
+    }
+}
+
 /// Returns `pair_required`, first issuing a code if none is valid.
 /// Until the desktop app shows codes (D3.7), the phone's request is what brings one up. A lockout
 /// still needs a deliberate new code, so a guesser cannot reconnect for fresh attempts.
@@ -272,6 +333,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::jitter::JitterBuffer;
     use crate::pairing::Pairing;
     use crate::pairing::tests::temp_store;
 
@@ -288,7 +350,8 @@ mod tests {
             audio_port: 47801,
             no_auth,
         };
-        tokio::spawn(serve(listener, opts, tx, pairing.clone()));
+        let buffer = Arc::new(Mutex::new(JitterBuffer::new()));
+        tokio::spawn(serve(listener, opts, tx, pairing.clone(), buffer));
         (addr, rx, pairing)
     }
 
@@ -300,12 +363,12 @@ mod tests {
         phone.send(json).await.unwrap();
     }
 
-    /// Returns the next message from the daemon, skipping its keepalive pings.
+    /// Returns the next message from the daemon, skipping its periodic pings and stats.
     async fn recv(phone: &mut Phone) -> Option<Message> {
         loop {
             let line = phone.next().await?.unwrap();
             match Message::from_line(&line).unwrap() {
-                Message::Ping => continue,
+                Message::Ping | Message::Stats { .. } => continue,
                 msg => return Some(msg),
             }
         }
@@ -523,5 +586,66 @@ mod tests {
         send(&mut phone, r#"{"type":"ping"}"#).await;
         // The stale token gets no second `pair_required`.
         assert_eq!(recv(&mut phone).await, Some(Message::Pong));
+    }
+
+    #[tokio::test]
+    async fn ready_session_gets_stats_with_every_ping() {
+        let (addr, _rx, _) = start_daemon(true).await;
+        let (mut phone, _) = open_session(addr).await;
+        // Real time (about 4 s): the paused clock jumps while bytes are in flight and times out the phone.
+        let mut pings_since_stats = Vec::new();
+        let mut pings = 0;
+        while pings_since_stats.len() < 2 {
+            let line = phone.next().await.unwrap().unwrap();
+            match Message::from_line(&line).unwrap() {
+                Message::Ping => {
+                    pings += 1;
+                    send(&mut phone, r#"{"type":"pong"}"#).await;
+                }
+                msg => {
+                    let idle = matches!(
+                        msg,
+                        Message::Stats {
+                            loss_pct: 0.0,
+                            jitter_ms: 5.0,
+                            latency_ms,
+                        } if latency_ms < 5.0
+                    );
+                    assert!(idle, "expected idle stats, got {msg:?}");
+                    pings_since_stats.push(std::mem::take(&mut pings));
+                }
+            }
+        }
+        assert_eq!(pings_since_stats[1], 1, "one stats per ping");
+    }
+
+    #[test]
+    fn stats_cover_only_the_last_window() {
+        let stats = |received, lost| Stats {
+            received,
+            lost,
+            jitter_ms: 3.0,
+            ..Stats::default()
+        };
+        let rtt = Some(Duration::from_millis(30));
+        let msg = build_stats_message(stats(100, 50), stats(290, 60), 40.0, rtt);
+        let expected = Message::Stats {
+            loss_pct: 5.0,
+            jitter_ms: 3.0,
+            latency_ms: 55.0,
+        };
+        assert_eq!(msg, expected);
+        // A new session replaced the buffer, so its counters restarted at zero.
+        let msg = build_stats_message(stats(500, 20), stats(95, 5), 40.0, rtt);
+        assert_eq!(msg, expected);
+        let msg = build_stats_message(stats(7, 1), stats(7, 1), 0.0, None);
+        assert!(matches!(
+            msg,
+            Message::Stats {
+                loss_pct: 0.0,
+                latency_ms: 0.0,
+                ..
+            }
+        ));
     }
 }
