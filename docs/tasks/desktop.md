@@ -44,7 +44,7 @@ Done when: CI green on an empty workspace, protocol doc agreed.
   - Logs go to stderr, which journald captures under systemd (no time prefix there). No journald crate.
 - [x] **D2.5** UDP receiver on 47801: validate magic, version, session id
 - [x] **D2.6** Jitter buffer: reorder by sequence, adaptive 20–120 ms target, silence + short fade on loss, stats (loss, jitter)
-  - Pull model: the sink reads samples at its own clock. Clock drift is absorbed by dropping frames above target + 40 ms and rebuffering on underrun. Target = 20 ms + 4 × jitter, clamped to 20–120 ms.
+  - Pull model: the sink reads samples at its own clock. Frames above target + 40 ms are dropped on every push and read (so the buffer stays short even when nothing records), and an underrun rebuffers. Target = 20 ms + 4 × jitter, clamped to 20–120 ms.
 - [x] **D2.7** Jitter buffer tests: loss, duplicates, reorder, late packets, sequence wrap
 - [x] **D2.8** `AudioSink` trait (write frames, report underruns)
   - Pull model: `AudioSink::run` reads from the jitter buffer at the device clock, so it has no `write`. Underruns are counted in the jitter buffer stats.
@@ -63,7 +63,7 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 - [x] **D3.1** Control server TCP 47800: `hello`, `ready`, `ping/pong`, `mute`, `bye`, with `--no-auth` flag → **S2**
   - `--no-auth` skips pairing (development only).
 - [x] **D3.2** Periodic `stats` to the phone every 2 s
-  - Sent with each ping once the session is ready. With no consumer on the "AirMic" source the buffer fills to its 1 s cap, so `latency_ms` reads about 1000 until something records.
+  - Sent with each ping once the session is ready.
 - [x] **D3.3** Pairing: 4 digit code (2 min, 5 attempts), 128 bit tokens, `~/.config/airmic/paired.json` → **S3**
   - Until D3.7, a `pair_required` issues a code and the daemon logs it. After a lockout only a new code from IPC (or a daemon restart) unlocks. A code pairs one phone, then is retired.
 - [x] **D3.4** mDNS advert `_airmic._tcp` with TXT `id`, `name`, `v` (`mdns-sd` crate) → **S3**

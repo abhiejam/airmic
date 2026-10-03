@@ -13,8 +13,6 @@ const MIN_TARGET_FRAMES: usize = 2;
 const MAX_TARGET_FRAMES: usize = 12;
 /// Frames above target before the buffer drops audio to catch up, e.g. after a Wi-Fi burst.
 const MAX_EXCESS_FRAMES: usize = 4;
-/// Hard cap so a stuck sink cannot grow the buffer without bound (1 s).
-const MAX_BUFFERED_FRAMES: usize = 100;
 /// 2 ms ramp around gaps, so loss sounds like a short dropout instead of a click.
 const FADE_SAMPLES: usize = 96;
 
@@ -82,10 +80,8 @@ impl JitterBuffer {
         }
         self.frames.insert(seq, frame);
         self.stats.received += 1;
-        while self.frames.len() > MAX_BUFFERED_FRAMES {
-            self.frames.pop_first();
-            self.stats.dropped += 1;
-        }
+        // Trim here too: with no app recording, `read` never runs to do it.
+        self.drop_excess_frames();
     }
 
     /// Fills `out` with the next samples. Outputs silence while muted, priming or starved.
@@ -131,19 +127,7 @@ impl JitterBuffer {
             self.next_seq = *self.frames.keys().next().unwrap();
             self.playing = true;
         }
-        let span = |jb: &Self| {
-            jb.frames
-                .keys()
-                .next_back()
-                .map_or(0, |&last| last + 1 - jb.next_seq)
-        };
-        while span(self) as usize > self.target_frames() + MAX_EXCESS_FRAMES {
-            if self.frames.remove(&self.next_seq).is_some() {
-                self.stats.dropped += 1;
-            }
-            self.next_seq += 1;
-            self.fade_in = true;
-        }
+        self.drop_excess_frames();
         if self.frames.is_empty() {
             self.playing = false;
             self.fade_in = true;
@@ -173,6 +157,30 @@ impl JitterBuffer {
             }
         }
         frame
+    }
+
+    /// Drops the oldest audio beyond target + excess, so latency stays bounded after a burst.
+    fn drop_excess_frames(&mut self) {
+        let max_span = (self.target_frames() + MAX_EXCESS_FRAMES) as u64;
+        while let (Some(&first), Some(&last)) =
+            (self.frames.keys().next(), self.frames.keys().next_back())
+        {
+            // While playing, the span starts at the next frame due out, which may be missing.
+            let start = if self.playing { self.next_seq } else { first };
+            if last + 1 - start <= max_span {
+                break;
+            }
+            if self.playing {
+                if self.frames.remove(&self.next_seq).is_some() {
+                    self.stats.dropped += 1;
+                }
+                self.next_seq += 1;
+                self.fade_in = true;
+            } else {
+                self.frames.pop_first();
+                self.stats.dropped += 1;
+            }
+        }
     }
 
     /// Maps a u32 sequence onto a u64 that keeps counting past the wrap.
@@ -365,6 +373,18 @@ mod tests {
         let keep = jb.target_frames() + MAX_EXCESS_FRAMES;
         assert_eq!(play(&mut jb, 1), [(20 - keep + 1) as i16]);
         assert_eq!(jb.stats().dropped, (20 - keep) as u64);
+    }
+
+    #[test]
+    fn buffer_stays_short_when_nothing_reads() {
+        let (mut jb, t) = (JitterBuffer::new(), Instant::now());
+        for seq in 0..300 {
+            push(&mut jb, t, seq);
+        }
+        let keep = jb.target_frames() + MAX_EXCESS_FRAMES;
+        assert_eq!(jb.delay_ms(), keep as f64 * FRAME_MS);
+        // An app that starts recording now hears the newest audio, not seconds-old frames.
+        assert_eq!(play(&mut jb, 1), [(300 - keep + 1) as i16]);
     }
 
     #[test]
