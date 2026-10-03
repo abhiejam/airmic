@@ -32,14 +32,14 @@ type Status = {
 type PairingCode = {
   code: string;             // "0427"
   expires_at: number;       // Unix ms
-  qr: string;               // airmic://pair?host=…&port=…&id=…&code=… (protocol.md §1)
+  qr: string;               // airmic://pair?host=…&port=…&id=…&code=… (protocol.md §1). `host` is this computer's address on the default-route interface; `port` is the control port the daemon listens on now.
 };
 
 type PairedDevice = {
   phone_id: string;
   name: string;
   paired_at: number;        // Unix ms
-  last_seen: number | null; // Unix ms
+  last_seen: number | null; // Unix ms. Now while the phone is connected, else when its last session ended; null if never.
 };
 
 type Settings = {
@@ -57,9 +57,9 @@ type Settings = {
 | Method | Params | Result | Notes |
 |---|---|---|---|
 | `status` | none | `Status` | |
-| `pairing_code` | `{regenerate?: boolean}` | `PairingCode` | Returns the current code, or creates one if none is valid. `regenerate: true` always creates a new one and resets the attempt count. |
+| `pairing_code` | `{regenerate?: boolean}` | `PairingCode` | Returns the current code, or creates one if none is valid (expired, used, or locked out). `regenerate: true` always creates a new one and resets the attempt count. |
 | `paired_devices` | none | `PairedDevice[]` | |
-| `forget_device` | `{phone_id}` | `null` | Ends that phone's session if it is connected. |
+| `forget_device` | `{phone_id}` | `null` | Ends that phone's session if it is connected: the daemon sends it `bye` and closes the connection. |
 | `get_settings` | none | `Settings` | |
 | `set_settings` | `Partial<Settings>` | `Settings` | Merges, saves to `config.toml`, returns the full result. |
 | `make_default` | none | `null` | Sets AirMic as the default input now (the "fix" button, D5.4). |

@@ -1,10 +1,11 @@
 //! Daemon ↔ desktop app IPC (docs/ipc.md): newline-delimited JSON-RPC 2.0 over a local socket.
 
 use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
@@ -19,6 +20,7 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::control::{Session, StreamStats};
+use crate::pairing::SharedPairing;
 use crate::receiver::{LastPacket, Level};
 use crate::sink::DefaultSource;
 
@@ -34,6 +36,7 @@ const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
+const UNKNOWN_DEVICE: i64 = 1;
 const INVALID_SETTING: i64 = 2;
 const UNAVAILABLE: i64 = 3;
 
@@ -153,6 +156,58 @@ struct SubscribeParams {
     topics: Vec<Topic>,
 }
 
+#[derive(Deserialize)]
+struct PairingCodeParams {
+    #[serde(default)]
+    regenerate: bool,
+}
+
+#[derive(Deserialize)]
+struct ForgetDeviceParams {
+    phone_id: String,
+}
+
+#[derive(Serialize)]
+struct PairingCode {
+    code: String,
+    /// Unix ms.
+    expires_at: u64,
+    qr: String,
+}
+
+/// A paired phone as the app sees it. Never carries the token.
+#[derive(Serialize)]
+struct PairedDevice {
+    phone_id: String,
+    name: String,
+    /// Unix ms.
+    paired_at: u64,
+    /// Unix ms. Now while the phone is connected, `null` if it never disconnected.
+    last_seen: Option<u64>,
+}
+
+/// What `pairing_code` needs to answer: the pairing state and the QR code fields.
+pub struct PairingContext {
+    pub pairing: SharedPairing,
+    pub device_id: String,
+    /// The TCP port the daemon is listening on now, which `set_settings` may have changed on disk.
+    pub control_port: u16,
+    pub lan_address: fn() -> std::io::Result<IpAddr>,
+}
+
+/// Returns this computer's address on the default-route interface, which is the one a phone reaches.
+/// Connecting a UDP socket picks the route without sending a packet.
+pub fn default_lan_address() -> std::io::Result<IpAddr> {
+    let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+    socket.connect((Ipv4Addr::new(8, 8, 8, 8), 53))?;
+    Ok(socket.local_addr()?.ip())
+}
+
+fn unix_ms() -> u64 {
+    let since_epoch = SystemTime::now().duration_since(UNIX_EPOCH);
+    since_epoch.map_or(0, |d| d.as_millis() as u64)
+}
+
 /// State shared by every app connection.
 pub struct Ipc {
     session: watch::Receiver<Option<Session>>,
@@ -161,6 +216,7 @@ pub struct Ipc {
     default_source: Box<dyn DefaultSource>,
     config_path: PathBuf,
     config: Mutex<Config>,
+    pairing: PairingContext,
     status: watch::Sender<Status>,
     notifications: broadcast::Sender<Notification>,
     refresh_status: Notify,
@@ -174,6 +230,7 @@ impl Ipc {
         default_source: Box<dyn DefaultSource>,
         config_path: PathBuf,
         config: Config,
+        pairing: PairingContext,
     ) -> Arc<Ipc> {
         let ipc = Arc::new(Ipc {
             session,
@@ -182,6 +239,7 @@ impl Ipc {
             default_source,
             config_path,
             config: Mutex::new(config),
+            pairing,
             status: watch::Sender::new(idle_status()),
             notifications: broadcast::channel(64).0,
             refresh_status: Notify::new(),
@@ -252,6 +310,9 @@ impl Ipc {
             "status" => Ok(json!(*self.status.borrow())),
             "get_settings" => Ok(json!(*self.config.lock().expect("config lock"))),
             "set_settings" => self.set_settings(params),
+            "pairing_code" => self.pairing_code(params),
+            "paired_devices" => Ok(self.paired_devices()),
+            "forget_device" => self.forget_device(params),
             "make_default" => {
                 let result = tokio::task::block_in_place(|| self.default_source.make_default());
                 self.refresh_status.notify_one();
@@ -269,6 +330,71 @@ impl Ipc {
             }
             _ => Err(rpc_error(METHOD_NOT_FOUND, format!("no method {method}"))),
         }
+    }
+
+    /// Returns the valid pairing code, or issues a new one when none is valid (also after a lockout)
+    /// or `regenerate` is set.
+    fn pairing_code(&self, params: Value) -> Result<Value, RpcError> {
+        let params: Option<PairingCodeParams> =
+            serde_json::from_value(params).map_err(|e| rpc_error(INVALID_PARAMS, e))?;
+        let regenerate = params.is_some_and(|p| p.regenerate);
+        let host = (self.pairing.lan_address)()
+            .map_err(|e| rpc_error(INTERNAL_ERROR, format!("no LAN address: {e}")))?;
+        let (code, expires_in) = {
+            let mut pairing = self.pairing.pairing.lock().expect("pairing lock");
+            let now = std::time::Instant::now();
+            let current = pairing.current_code(now).map(str::to_string);
+            let code = match current {
+                Some(code) if !regenerate => code,
+                _ => pairing.regenerate_code(now),
+            };
+            let expires_in = pairing.code_expires_in(now).unwrap_or_default();
+            (code, expires_in)
+        };
+        let qr = format!(
+            "airmic://pair?host={host}&port={}&id={}&code={code}",
+            self.pairing.control_port, self.pairing.device_id
+        );
+        let expires_at = unix_ms() + expires_in.as_millis() as u64;
+        Ok(json!(PairingCode {
+            code,
+            expires_at,
+            qr
+        }))
+    }
+
+    fn paired_devices(&self) -> Value {
+        let connected = self.session.borrow().as_ref().map(|s| s.phone_id.clone());
+        let pairing = self.pairing.pairing.lock().expect("pairing lock");
+        let devices: Vec<PairedDevice> = pairing
+            .devices()
+            .iter()
+            .map(|d| PairedDevice {
+                phone_id: d.phone_id.clone(),
+                name: d.phone_name.clone(),
+                paired_at: d.paired_at * 1000,
+                last_seen: if connected.as_deref() == Some(&d.phone_id) {
+                    Some(unix_ms())
+                } else {
+                    d.last_seen.map(|s| s * 1000)
+                },
+            })
+            .collect();
+        json!(devices)
+    }
+
+    /// Unpairs a phone. The control server closes its connection when it hears the phone was forgotten.
+    fn forget_device(&self, params: Value) -> Result<Value, RpcError> {
+        let params: ForgetDeviceParams =
+            serde_json::from_value(params).map_err(|e| rpc_error(INVALID_PARAMS, e))?;
+        let mut pairing = self.pairing.pairing.lock().expect("pairing lock");
+        let forgot = pairing
+            .forget(&params.phone_id)
+            .map_err(|e| rpc_error(INTERNAL_ERROR, format!("{e:#}")))?;
+        if !forgot {
+            return Err(rpc_error(UNKNOWN_DEVICE, "no paired phone with that id"));
+        }
+        Ok(Value::Null)
     }
 
     /// Merges `params` into the config, validates it and saves `config.toml`.
@@ -423,7 +549,13 @@ async fn handle_client<S: AsyncRead + AsyncWrite + Unpin>(
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use airmic_proto::Message;
+    use tokio::net::{TcpListener, TcpStream};
+
     use super::*;
+    use crate::control::{self, ControlOptions};
+    use crate::jitter::JitterBuffer;
+    use crate::pairing::Pairing;
 
     type Client = Framed<UnixStream, LinesCodec>;
 
@@ -444,10 +576,21 @@ mod tests {
         session: watch::Sender<Option<Session>>,
         level: Arc<Level>,
         last_packet: LastPacket,
+        pairing: SharedPairing,
     }
 
     async fn start_daemon() -> Daemon {
+        start_daemon_with_store(None).await
+    }
+
+    /// Starts the IPC server on a socket in a temp dir, with `paired_json` as the paired phones file.
+    async fn start_daemon_with_store(paired_json: Option<&str>) -> Daemon {
         let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("paired.json");
+        if let Some(json) = paired_json {
+            std::fs::write(&store, json).unwrap();
+        }
+        let pairing = Arc::new(Mutex::new(Pairing::load(store).unwrap()));
         let listener = UnixSocket::bind(&dir.path().join("airmic.sock")).unwrap();
         let (session, session_rx) = watch::channel(None);
         let (level, last_packet) = (Arc::new(Level::default()), LastPacket::default());
@@ -458,6 +601,12 @@ mod tests {
             Box::new(FakeDefault(Arc::default())),
             dir.path().join("config/config.toml"),
             Config::default(),
+            PairingContext {
+                pairing: pairing.clone(),
+                device_id: "dev-1".into(),
+                control_port: 47800,
+                lan_address: || Ok("192.168.1.5".parse().unwrap()),
+            },
         );
         tokio::spawn(serve(listener, ipc));
         Daemon {
@@ -465,7 +614,55 @@ mod tests {
             session,
             level,
             last_packet,
+            pairing,
         }
+    }
+
+    /// Starts the real control server on a loopback port, sharing this daemon's session and pairing.
+    async fn start_control_server(daemon: &Daemon) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let opts = ControlOptions {
+            audio_port: 47801,
+            no_auth: false,
+        };
+        let buffer = Arc::new(Mutex::new(JitterBuffer::new()));
+        let (session, pairing) = (daemon.session.clone(), daemon.pairing.clone());
+        tokio::spawn(control::serve(listener, opts, session, pairing, buffer));
+        addr
+    }
+
+    type Phone = Framed<TcpStream, LinesCodec>;
+
+    async fn recv_message(phone: &mut Phone) -> Message {
+        loop {
+            let line = tokio::time::timeout(Duration::from_secs(5), phone.next()).await;
+            match Message::from_line(&line.expect("no message in 5 s").unwrap().unwrap()).unwrap() {
+                Message::Ping | Message::Stats { .. } => continue,
+                msg => return msg,
+            }
+        }
+    }
+
+    /// Pairs a phone `p1` with `code` over TCP, up to `ready`. Returns the connection and its token.
+    async fn pair_phone(addr: std::net::SocketAddr, code: &str) -> (Phone, String) {
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let mut phone = Framed::new(stream, LinesCodec::new());
+        let hello = r#"{"type":"hello","v":1,"phone_id":"p1","phone_name":"iPhone"}"#;
+        phone.send(hello).await.unwrap();
+        assert_eq!(recv_message(&mut phone).await, Message::PairRequired);
+        phone
+            .send(format!(r#"{{"type":"pair","code":"{code}"}}"#))
+            .await
+            .unwrap();
+        let Message::Paired { token } = recv_message(&mut phone).await else {
+            panic!("expected paired");
+        };
+        assert!(matches!(
+            recv_message(&mut phone).await,
+            Message::Ready { .. }
+        ));
+        (phone, token)
     }
 
     impl Daemon {
@@ -696,5 +893,183 @@ mod tests {
                 break;
             }
         }
+    }
+
+    fn now_ms() -> u64 {
+        unix_ms()
+    }
+
+    fn wrong_code(code: &str) -> String {
+        format!("{:04}", (code.parse::<u16>().unwrap() + 1) % 10_000)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pairing_code_is_reused_until_regenerated() {
+        let daemon = start_daemon().await;
+        let mut app = daemon.connect().await;
+        let before = now_ms();
+        let first = call(&mut app, "pairing_code", Value::Null).await["result"].clone();
+        let code = first["code"].as_str().unwrap();
+        assert_eq!(code.len(), 4);
+        assert_eq!(
+            first["qr"],
+            format!("airmic://pair?host=192.168.1.5&port=47800&id=dev-1&code={code}")
+        );
+        let expires_at = first["expires_at"].as_u64().unwrap();
+        assert!(
+            (before + 119_000..=now_ms() + 120_000).contains(&expires_at),
+            "expires_at {expires_at} is not about 2 minutes from {before}"
+        );
+
+        let again = call(&mut app, "pairing_code", json!({})).await["result"].clone();
+        assert_eq!(again["code"], first["code"]);
+
+        // `regenerate` also resets the attempt count: 4 + 4 wrong guesses must not lock.
+        let guess = |p: &mut Pairing, code: &str| {
+            p.pair(&wrong_code(code), "p9", "x", std::time::Instant::now())
+                .unwrap()
+        };
+        for _ in 0..4 {
+            guess(&mut daemon.pairing.lock().unwrap(), code);
+        }
+        let result =
+            call(&mut app, "pairing_code", json!({"regenerate": true})).await["result"].clone();
+        let code = result["code"].as_str().unwrap();
+        for _ in 0..4 {
+            guess(&mut daemon.pairing.lock().unwrap(), code);
+        }
+        assert!(!daemon.pairing.lock().unwrap().is_locked());
+        let reply = call(&mut app, "pairing_code", json!({"regenerate": "yes"})).await;
+        assert_eq!(error_code(&reply), INVALID_PARAMS);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pairing_code_after_a_lockout_unlocks() {
+        let daemon = start_daemon().await;
+        let mut app = daemon.connect().await;
+        let code = call(&mut app, "pairing_code", Value::Null).await["result"]["code"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        for _ in 0..5 {
+            let now = std::time::Instant::now();
+            let wrong = wrong_code(&code);
+            daemon
+                .pairing
+                .lock()
+                .unwrap()
+                .pair(&wrong, "p9", "x", now)
+                .unwrap();
+        }
+        assert!(daemon.pairing.lock().unwrap().is_locked());
+        let result = call(&mut app, "pairing_code", Value::Null).await["result"].clone();
+        let new_code = result["code"].as_str().unwrap();
+        let mut pairing = daemon.pairing.lock().unwrap();
+        assert!(!pairing.is_locked());
+        let outcome = pairing.pair(new_code, "p1", "iPhone", std::time::Instant::now());
+        assert!(matches!(
+            outcome,
+            Ok(crate::pairing::PairOutcome::Paired { .. })
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn paired_devices_report_unix_ms_and_hide_the_token() {
+        // On disk: seconds, a phone with `last_seen`, and one from before `last_seen` existed.
+        let store = r#"{"devices":[
+            {"phone_id":"p1","phone_name":"iPhone","token":"secret1","paired_at":1790000000,"last_seen":1790000500},
+            {"phone_id":"p2","phone_name":"Old iPad","token":"secret2","paired_at":1780000000}
+        ]}"#;
+        let daemon = start_daemon_with_store(Some(store)).await;
+        let mut app = daemon.connect().await;
+        let reply = call(&mut app, "paired_devices", Value::Null).await;
+        assert_eq!(
+            reply["result"],
+            json!([
+                {"phone_id": "p1", "name": "iPhone", "paired_at": 1_790_000_000_000u64, "last_seen": 1_790_000_500_000u64},
+                {"phone_id": "p2", "name": "Old iPad", "paired_at": 1_780_000_000_000u64, "last_seen": null},
+            ])
+        );
+        assert!(!reply.to_string().contains("secret"));
+
+        // A connected phone was seen just now.
+        daemon.start_session(false);
+        let before = now_ms();
+        let reply = call(&mut app, "paired_devices", Value::Null).await;
+        let seen = reply["result"][0]["last_seen"].as_u64().unwrap();
+        assert!((before..=now_ms()).contains(&seen), "{seen}");
+        assert_eq!(reply["result"][1]["last_seen"], Value::Null);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn forget_device_unpairs_and_rejects_unknown_ids() {
+        let store = r#"{"devices":[{"phone_id":"p1","phone_name":"iPhone","token":"t","paired_at":1790000000}]}"#;
+        let daemon = start_daemon_with_store(Some(store)).await;
+        let mut app = daemon.connect().await;
+        let reply = call(&mut app, "forget_device", json!({"phone_id": "nope"})).await;
+        assert_eq!(error_code(&reply), UNKNOWN_DEVICE);
+        let reply = call(&mut app, "forget_device", json!({})).await;
+        assert_eq!(error_code(&reply), INVALID_PARAMS);
+
+        let reply = call(&mut app, "forget_device", json!({"phone_id": "p1"})).await;
+        assert_eq!(reply["result"], Value::Null);
+        let reply = call(&mut app, "paired_devices", Value::Null).await;
+        assert_eq!(reply["result"], json!([]));
+        let reloaded = Pairing::load(daemon.dir.path().join("paired.json")).unwrap();
+        assert!(!reloaded.is_known("p1"));
+        let reply = call(&mut app, "forget_device", json!({"phone_id": "p1"})).await;
+        assert_eq!(error_code(&reply), UNKNOWN_DEVICE, "already forgotten");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn app_pairs_a_phone_and_forgetting_it_ends_its_session() {
+        let daemon = start_daemon().await;
+        let control = start_control_server(&daemon).await;
+        let mut app = daemon.connect().await;
+        call(&mut app, "subscribe", json!({"topics": ["status"]})).await;
+
+        let result = call(&mut app, "pairing_code", Value::Null).await["result"].clone();
+        let (mut phone, token) = pair_phone(control, result["code"].as_str().unwrap()).await;
+        recv_status(&mut app, |s| s["phone"]["id"] == "p1").await;
+        let devices = call(&mut app, "paired_devices", Value::Null).await["result"].clone();
+        assert_eq!(devices[0]["phone_id"], "p1");
+        assert_eq!(devices[0]["name"], "iPhone");
+
+        call(&mut app, "forget_device", json!({"phone_id": "p1"})).await;
+        assert_eq!(recv_message(&mut phone).await, Message::Bye);
+        recv_status(&mut app, |s| s["state"] == "idle").await;
+
+        // The old token no longer opens a session.
+        let stream = TcpStream::connect(control).await.unwrap();
+        let mut phone = Framed::new(stream, LinesCodec::new());
+        let hello = r#"{"type":"hello","v":1,"phone_id":"p1","phone_name":"iPhone"}"#;
+        phone.send(hello).await.unwrap();
+        phone
+            .send(format!(r#"{{"type":"auth","token":"{token}"}}"#))
+            .await
+            .unwrap();
+        assert_eq!(recv_message(&mut phone).await, Message::PairRequired);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn last_seen_is_recorded_when_a_session_ends() {
+        let daemon = start_daemon().await;
+        let control = start_control_server(&daemon).await;
+        let mut app = daemon.connect().await;
+        let code = call(&mut app, "pairing_code", Value::Null).await["result"]["code"].clone();
+        let (mut phone, _) = pair_phone(control, code.as_str().unwrap()).await;
+        phone.send(r#"{"type":"bye"}"#).await.unwrap();
+        let before = now_ms();
+        loop {
+            let devices = call(&mut app, "paired_devices", Value::Null).await["result"].clone();
+            if let Some(seen) = devices[0]["last_seen"].as_u64() {
+                // Stored in whole seconds.
+                assert!(seen <= now_ms() && seen + 2_000 >= before, "{seen}");
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let reloaded = Pairing::load(daemon.dir.path().join("paired.json")).unwrap();
+        assert!(reloaded.devices()[0].last_seen.is_some());
     }
 }

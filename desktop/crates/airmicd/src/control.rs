@@ -81,7 +81,15 @@ pub async fn serve(
                 info!(%peer, "control connection ended: {e}");
             }
             if let Some(id) = session_id {
+                let phone_id = session
+                    .borrow()
+                    .as_ref()
+                    .filter(|s| s.id == id)
+                    .map(|s| s.phone_id.clone());
                 session.send_if_modified(|s| clear_if_owner(s, id));
+                if let Some(phone_id) = phone_id {
+                    pairing.lock().expect("pairing lock").mark_seen(&phone_id);
+                }
                 info!(%peer, "session {id:#010x} ended");
             }
         });
@@ -116,9 +124,18 @@ async fn handle_phone(
     let mut ping_sent = None;
     let mut round_trip = None;
     let mut window_start: Option<Stats> = None;
+    let mut forgotten = pairing.lock().expect("pairing lock").subscribe_forgotten();
 
     loop {
         let line = tokio::select! {
+            forgotten_id = forgotten.recv() => {
+                // A forgotten phone reconnects, gets `pair_required` and drops its token.
+                if matches!(&forgotten_id, Ok(id) if phone.as_ref().is_some_and(|(p, _)| p == id)) {
+                    let _ = conn.send(Message::Bye.to_line().trim_end()).await;
+                    return Ok(());
+                }
+                continue;
+            }
             line = conn.next() => match line {
                 Some(line) => line?,
                 None => return Ok(()),
@@ -296,7 +313,7 @@ fn build_stream_stats(
 }
 
 /// Returns `pair_required`, first issuing a code if none is valid.
-/// Until the desktop app shows codes (D3.7), the phone's request is what brings one up. A lockout
+/// Without the desktop app (D5) running, the phone's request is what brings one up. A lockout
 /// still needs a deliberate new code, so a guesser cannot reconnect for fresh attempts.
 fn request_pairing(pairing: &SharedPairing) -> Message {
     let mut pairing = pairing.lock().expect("pairing lock");
@@ -613,6 +630,30 @@ mod tests {
         send(&mut phone, r#"{"type":"ping"}"#).await;
         // The stale token gets no second `pair_required`.
         assert_eq!(recv(&mut phone).await, Some(Message::Pong));
+    }
+
+    #[tokio::test]
+    async fn forgetting_a_connected_phone_says_bye_and_frees_the_session() {
+        let (addr, mut rx, pairing) = start_daemon(false).await;
+        let (mut phone, _) = pair_phone(addr, &pairing).await;
+        assert!(pairing.lock().unwrap().forget("p1").unwrap());
+        assert_eq!(recv(&mut phone).await, Some(Message::Bye));
+        rx.wait_for(Option::is_none).await.unwrap();
+        assert_eq!(
+            recv(&mut phone).await,
+            None,
+            "the daemon closes the connection"
+        );
+    }
+
+    #[tokio::test]
+    async fn forgetting_another_phone_leaves_the_session_alone() {
+        let (addr, rx, pairing) = start_daemon(false).await;
+        let (mut phone, _) = pair_phone(addr, &pairing).await;
+        assert!(!pairing.lock().unwrap().forget("p2").unwrap());
+        send(&mut phone, r#"{"type":"ping"}"#).await;
+        assert_eq!(recv(&mut phone).await, Some(Message::Pong));
+        assert!(rx.borrow().is_some());
     }
 
     #[tokio::test]

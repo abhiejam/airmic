@@ -59,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| config_dir.join("config.toml"));
     let config = Config::load(&config_path)?;
     let pairing = Arc::new(Mutex::new(Pairing::load(config_dir.join("paired.json"))?));
+    let device_id = mdns::load_or_create_device_id(&config_dir)?;
 
     let listener = TcpListener::bind((Ipv6Addr::UNSPECIFIED, config.control_port))
         .await
@@ -97,6 +98,12 @@ async fn main() -> anyhow::Result<()> {
         Box::new(PipeWireDefault),
         config_path,
         config.clone(),
+        ipc::PairingContext {
+            pairing: pairing.clone(),
+            device_id,
+            control_port: config.control_port,
+            lan_address: ipc::default_lan_address,
+        },
     );
     let opts = ControlOptions {
         audio_port: config.audio_port,
