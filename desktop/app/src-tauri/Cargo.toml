@@ -1,0 +1,19 @@
+[package]
+name = "airmic-app"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/abhiejam/airmic"
+
+[lib]
+name = "airmic_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Its own workspace: the daemon's CI (`cargo clippy --workspace`) must not need the webkit libraries.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
