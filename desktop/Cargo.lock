@@ -47,6 +47,7 @@ dependencies = [
  "pipewire",
  "rand",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-util",

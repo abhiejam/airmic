@@ -2,6 +2,7 @@ mod config;
 mod control;
 mod jitter;
 mod mdns;
+mod pairing;
 mod pipewire_sink;
 mod receiver;
 mod sink;
