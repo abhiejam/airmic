@@ -9,7 +9,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tokio::sync::broadcast;
+use tracing::{info, warn};
 
 const CODE_LIFETIME: Duration = Duration::from_secs(120);
 const MAX_ATTEMPTS: u32 = 5;
@@ -23,6 +24,9 @@ pub struct PairedDevice {
     pub token: String,
     /// Unix seconds.
     pub paired_at: u64,
+    /// Unix seconds of the last time this phone's session ended. Missing in files from before D3.7.
+    #[serde(default)]
+    pub last_seen: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +55,13 @@ pub struct Pairing {
     path: PathBuf,
     devices: Vec<PairedDevice>,
     code: Code,
+    forgotten: broadcast::Sender<String>,
+}
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 impl Pairing {
@@ -66,7 +77,13 @@ impl Pairing {
             path,
             devices: store.devices,
             code: Code::None,
+            forgotten: broadcast::channel(16).0,
         })
+    }
+
+    /// Returns a receiver for the id of every phone `forget` removes, so its connection can be closed.
+    pub fn subscribe_forgotten(&self) -> broadcast::Receiver<String> {
+        self.forgotten.subscribe()
     }
 
     /// Returns the pairing code while it is valid: issued less than 2 minutes ago and not locked.
@@ -81,6 +98,16 @@ impl Pairing {
         }
     }
 
+    /// Returns how long the current code stays valid, or `None` when there is no valid code.
+    pub fn code_expires_in(&self, now: Instant) -> Option<Duration> {
+        match &self.code {
+            Code::Active { issued, .. } => {
+                CODE_LIFETIME.checked_sub(now.saturating_duration_since(*issued))
+            }
+            _ => None,
+        }
+    }
+
     /// Returns true after 5 wrong codes, until the user shows a new code.
     pub fn is_locked(&self) -> bool {
         matches!(self.code, Code::Locked)
@@ -89,7 +116,7 @@ impl Pairing {
     /// Issues a fresh code, which also lifts a lockout.
     pub fn regenerate_code(&mut self, now: Instant) -> String {
         let digits = format!("{:04}", rand::random_range(0..10_000u16));
-        // Until the desktop app shows the code over IPC (D3.7), the log is the only place to read it.
+        // Without the desktop app (D5) running, the log is the only place to read the code.
         info!("pairing code {digits}");
         self.code = Code::Active {
             digits: digits.clone(),
@@ -99,7 +126,6 @@ impl Pairing {
         digits
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "for the IPC server (D3.7)"))]
     pub fn devices(&self) -> &[PairedDevice] {
         &self.devices
     }
@@ -145,17 +171,15 @@ impl Pairing {
             phone_id: phone_id.to_string(),
             phone_name: phone_name.to_string(),
             token: token.clone(),
-            paired_at: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs()),
+            paired_at: unix_seconds(),
+            last_seen: None,
         });
         self.save()?;
         info!(phone_id, phone_name, "phone paired");
         Ok(PairOutcome::Paired { token })
     }
 
-    /// Removes a paired phone. Returns false when it was not paired.
-    #[cfg_attr(not(test), expect(dead_code, reason = "for the IPC server (D3.7)"))]
+    /// Removes a paired phone and tells its open connection to close. Returns false when it was not paired.
     pub fn forget(&mut self, phone_id: &str) -> anyhow::Result<bool> {
         let before = self.devices.len();
         self.devices.retain(|d| d.phone_id != phone_id);
@@ -163,7 +187,19 @@ impl Pairing {
             return Ok(false);
         }
         self.save()?;
+        let _ = self.forgotten.send(phone_id.to_string());
         Ok(true)
+    }
+
+    /// Records that `phone_id`'s session just ended. A save failure is only logged: it must not fail a disconnect.
+    pub fn mark_seen(&mut self, phone_id: &str) {
+        let Some(device) = self.devices.iter_mut().find(|d| d.phone_id == phone_id) else {
+            return;
+        };
+        device.last_seen = Some(unix_seconds());
+        if let Err(e) = self.save() {
+            warn!("saving last seen for {phone_id}: {e:#}");
+        }
     }
 
     /// Writes `paired.json` through a temp file and a rename, so a crash never leaves it half written.

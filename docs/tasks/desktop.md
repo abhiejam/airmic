@@ -25,12 +25,11 @@ Read this before starting desktop work. Everything below was checked on this mac
 **Known issues, in priority order**
 1. **Audio underruns (D2.6).** The phone stream has about 10 underruns and 23 dropped frames per minute on `main` (each a short gap). Jitter is low (~1.7 ms), so the cause is bursty arrival, drift, or both. Branch `desktop/jitter-target` (pushed, no PR) sizes the target from the worst arrival delay over 10 s: it fixes a synthetic 80 ms stall test, but on the real phone it only cut underruns to ~6/min while the target sat at the 120 ms cap, so it is not the whole answer. Next step: log per-packet `(arrival, sequence, timestamp)` for 60 s from the real phone and measure stall lengths and clock drift before changing the algorithm again. Do not merge that branch as is.
 2. **Phone drops the session right after reconnecting to a restarted daemon** (mobile track). The daemon log shows `session … ready` then `ended` 2.5 s later with no error, so the phone closes it cleanly. A prompt with this evidence was handed to the iOS session. Desktop needs no change.
-3. **D3.7 is partial.** IPC serves `status`, `get_settings`, `set_settings`, `make_default`, `subscribe` (`status`, `level`). Missing: `pairing_code`, `paired_devices`, `forget_device`. `pairing.rs` already has `current_code`, `regenerate_code`, `devices`, `forget`. Mismatch to resolve: `paired.json` stores `paired_at` in Unix **seconds** and has no `last_seen`, while `docs/ipc.md` promises Unix ms and `last_seen`. The QR `id` comes from `mdns::load_or_create_device_id`.
-4. The daemon sets AirMic as the default source on start and does not restore the previous default on exit.
-5. If PipeWire is unreachable at start, the daemon exits with the right error but also prints a Tokio "context is being shutdown" panic.
-6. `docs/notes/iphone-linux-checklist.md` (mobile's file) uses `pactl`, `avahi-browse` and `sudo ufw`, none of which work here, and its `clock.quantum` read shows 1024 while the graph runs at 480 (`pw-top` shows the real value).
+3. The daemon sets AirMic as the default source on start and does not restore the previous default on exit.
+4. If PipeWire is unreachable at start, the daemon exits with the right error but also prints a Tokio "context is being shutdown" panic.
+5. `docs/notes/iphone-linux-checklist.md` (mobile's file) uses `pactl`, `avahi-browse` and `sudo ufw`, none of which work here, and its `clock.quantum` read shows 1024 while the graph runs at 480 (`pw-top` shows the real value).
 
-**Next, in order:** the three pairing IPC methods (small; unblocks D5.5) → D5 desktop app in its own session against `docs/ipc.md` → underrun investigation (issue 1) → D2.12 install and reboot test (ask the user before installing anything).
+**Next, in order:** D5 desktop app in its own session against `docs/ipc.md` → underrun investigation (issue 1) → D2.12 install and reboot test (ask the user before installing anything).
 
 **This machine:** Ubuntu 24.04.5, PipeWire 1.0.5, WirePlumber 0.4.17, Rust 1.99. `pactl` and `avahi-browse` are not installed; use `pw-cli`, `pw-dump`, `wpctl`, `pw-metadata`, `pw-top`. ufw is installed but disabled. LAN IP 192.168.20.42 on `wlp3s0`, hostname `nuc`. The user's own default mic is not AirMic: never change it (or install units, or use sudo) without asking, and restore it after a test.
 
@@ -99,9 +98,9 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
   - Computer id is a UUID v4 kept in `~/.config/airmic/device_id`; instance name is the hostname.
 - [x] **D3.5** One active phone at a time; new phone gets a clear "busy" error
 - [x] **D3.6** Mute flag and header-only packets → silence output
-- [ ] **D3.7** IPC server behind a trait (Unix socket `$XDG_RUNTIME_DIR/airmic.sock`), JSON-RPC: `status`, `level`, `pairing_code`, `paired_devices`, `forget_device`, `settings`
+- [x] **D3.7** IPC server behind a trait (Unix socket `$XDG_RUNTIME_DIR/airmic.sock`), JSON-RPC: `status`, `level`, `pairing_code`, `paired_devices`, `forget_device`, `settings`
   - Contract in `docs/ipc.md` (adds `make_default`, `subscribe`; `settings` split into get/set). The app (D5) builds against it in parallel.
-  - Partial: everything except `pairing_code`, `paired_devices`, `forget_device`. See "Known issues" 3 above.
+  - `paired.json` keeps `paired_at` and `last_seen` in Unix seconds (older files without `last_seen` still load); IPC converts to ms. `last_seen` is written when a phone's session ends. `forget_device` makes the control server send `bye` and close that phone's connection. The QR `host` is the default-route address (UDP connect trick), `port` the running control port.
 
 Done when: phone discovers the PC, pairs with the code, reconnects with its token; `airmic-send` covers the same in tests.
 
