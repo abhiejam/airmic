@@ -68,6 +68,7 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 - [x] **D3.5** One active phone at a time; new phone gets a clear "busy" error
 - [ ] **D3.6** Mute flag and header-only packets → silence output
 - [ ] **D3.7** IPC server behind a trait (Unix socket `$XDG_RUNTIME_DIR/airmic.sock`), JSON-RPC: `status`, `level`, `pairing_code`, `paired_devices`, `forget_device`, `settings`
+  - Contract in `docs/ipc.md` (adds `make_default`, `subscribe`; `settings` split into get/set). The app (D5) builds against it in parallel.
 
 Done when: phone discovers the PC, pairs with the code, reconnects with its token; `airmic-send` covers the same in tests.
 
