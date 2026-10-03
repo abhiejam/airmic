@@ -6,11 +6,15 @@ final class UDPSender: Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "io.airmic.udp")
 
-    init?(host: String, port: UInt16) {
+    convenience init?(host: String, port: UInt16) {
+        self.init(host: NWEndpoint.Host(host), port: port)
+    }
+
+    init?(host: NWEndpoint.Host, port: UInt16) {
         guard let port = NWEndpoint.Port(rawValue: port) else { return nil }
         let parameters = NWParameters.udp
         parameters.serviceClass = .interactiveVoice
-        connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: parameters)
+        connection = NWConnection(host: host, port: port, using: parameters)
     }
 
     func start(onStateChange: (@Sendable (NWConnection.State) -> Void)? = nil) {

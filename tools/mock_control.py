@@ -8,6 +8,9 @@ Python 3 standard library only.
   python3 tools/mock_control.py --pair 0427        # unknown phones must enter this code
   python3 tools/mock_control.py --wav session.wav  # save the audio it receives
   python3 tools/mock_control.py --drop-after 20    # close the control connection after 20 s (reconnect test)
+
+Advertises `_airmic._tcp` over Bonjour (macOS `dns-sd`, Linux `avahi-publish`) so the
+phone finds it under Nearby. With --pair it prints the QR pairing link.
 """
 
 import argparse
@@ -15,8 +18,12 @@ import asyncio
 import json
 import math
 import secrets
+import shutil
+import socket
 import struct
+import subprocess
 import time
+import uuid
 import wave
 
 CONTROL_PORT = 47800
@@ -35,6 +42,8 @@ class Server:
         self.args = args
         self.session_id = None  # active session
         self.tokens = set()  # paired tokens, for this run only
+        self.code_attempts = 0
+        self.computer_id = str(uuid.uuid4())
         self.audio = AudioStats()
         self.wav = None
         if args.wav:
@@ -202,12 +211,17 @@ async def handle_control(reader, writer, server):
             elif kind == "bye":
                 break
             elif kind == "pair" and args.pair:
+                if server.code_attempts >= 5:
+                    await send({"type": "error", "code": "pair_locked", "message": "Too many wrong codes"})
+                    break
                 if message.get("code") == args.pair:
+                    server.code_attempts = 0
                     token = secrets.token_hex(16)
                     server.tokens.add(token)
                     await send({"type": "paired", "token": token})
                     await start_session()
                 else:
+                    server.code_attempts += 1
                     await send({"type": "error", "code": "bad_code", "message": "Wrong code"})
             elif kind == "mute":
                 log(f"control: phone {'muted' if message.get('on') else 'unmuted'}")
@@ -228,6 +242,8 @@ async def main():
     parser.add_argument("--pair", metavar="CODE", help="require pairing with this 4 digit code")
     parser.add_argument("--wav", metavar="FILE", help="save received audio to a WAV file")
     parser.add_argument("--drop-after", type=float, metavar="SECONDS", help="abort each control connection after this long")
+    parser.add_argument("--name", default=socket.gethostname().split(".")[0], help="computer name to advertise")
+    parser.add_argument("--no-bonjour", action="store_true", help="don't advertise over Bonjour")
     args = parser.parse_args()
 
     server = Server(args)
@@ -236,12 +252,41 @@ async def main():
     tcp = await asyncio.start_server(lambda r, w: handle_control(r, w, server), "0.0.0.0", CONTROL_PORT)
     log(f"mock airmicd: control tcp {CONTROL_PORT}, audio udp {AUDIO_PORT}"
         + (f", pairing code {args.pair}" if args.pair else ", no auth"))
+    advert = None if args.no_bonjour else advertise(args.name, server.computer_id)
+    if args.pair:
+        log(f"QR link: airmic://pair?host={local_ip()}&port={CONTROL_PORT}&id={server.computer_id}&code={args.pair}")
     try:
         async with tcp:
             await tcp.serve_forever()
     finally:
+        if advert:
+            advert.terminate()
         if server.wav:
             server.wav.close()
+
+
+def advertise(name, computer_id):
+    """Publish _airmic._tcp with the TXT record from docs/protocol.md §1."""
+    txt = [f"id={computer_id}", f"name={name}", "v=1"]
+    if shutil.which("dns-sd"):
+        command = ["dns-sd", "-R", name, "_airmic._tcp", "local", str(CONTROL_PORT), *txt]
+    elif shutil.which("avahi-publish"):
+        command = ["avahi-publish", "-s", name, "_airmic._tcp", str(CONTROL_PORT), *txt]
+    else:
+        log("bonjour: neither dns-sd nor avahi-publish found, not advertising")
+        return None
+    log(f"bonjour: advertising '{name}' as _airmic._tcp")
+    return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def local_ip():
+    """The address other devices on the LAN reach this machine at."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.0.2.1", 9))  # no packet is sent
+            return s.getsockname()[0]
+        except OSError:
+            return "127.0.0.1"
 
 
 if __name__ == "__main__":

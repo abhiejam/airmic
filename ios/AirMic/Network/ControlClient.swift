@@ -10,6 +10,8 @@ private let log = Logger(subsystem: "io.airmic.AirMic", category: "control")
 /// closes after 6 s of silence. Everything runs on one serial queue; events come out of `events`.
 final class ControlClient: @unchecked Sendable {
     enum Event: Sendable {
+        /// TCP is up. `host` is the computer's address; audio goes there (§3.2).
+        case connected(host: NWEndpoint.Host?)
         case ready(sessionID: UInt32, udpPort: UInt16, sampleRate: Int)
         case pairRequired
         case paired(token: String)
@@ -39,11 +41,10 @@ final class ControlClient: @unchecked Sendable {
     private var lastReceived = Date()
     private var timer: DispatchSourceTimer?
 
-    init?(host: String, port: UInt16, hello: ControlMessage, token: String?) {
-        guard let port = NWEndpoint.Port(rawValue: port) else { return nil }
+    init(endpoint: NWEndpoint, hello: ControlMessage, token: String?) {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
-        connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: NWParameters(tls: nil, tcp: tcp))
+        connection = NWConnection(to: endpoint, using: NWParameters(tls: nil, tcp: tcp))
         greeting = [hello] + (token.map { [.auth(token: $0)] } ?? [])
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
     }
@@ -80,6 +81,9 @@ final class ControlClient: @unchecked Sendable {
         case .ready:
             isOpen = true
             lastReceived = Date()
+            var host: NWEndpoint.Host?
+            if case let .hostPort(remote, _) = connection.currentPath?.remoteEndpoint { host = remote }
+            continuation.yield(.connected(host: host))
             greeting.forEach(write)
             receive()
         case .waiting(let error):
