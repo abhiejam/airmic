@@ -39,7 +39,7 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 ## D2 · Protocol crate and daemon core
 - [x] **D2.1** `airmic-proto`: header struct, encode/decode, control message enums (serde, newline JSON)
 - [x] **D2.2** Tests against `vectors.json`
-- [ ] **D2.3** `airmic-send` CLI: stream a sine tone or WAV with the real protocol; flags for loss %, jitter ms, reorder
+- [x] **D2.3** `airmic-send` CLI: stream a sine tone or WAV with the real protocol; flags for loss %, jitter ms, reorder
 - [x] **D2.4** `airmicd` skeleton: tokio, `config.toml` (`directories` crate for paths), tracing to journald
   - Logs go to stderr, which journald captures under systemd (no time prefix there). No journald crate.
 - [ ] **D2.5** UDP receiver on 47801: validate magic, version, session id
