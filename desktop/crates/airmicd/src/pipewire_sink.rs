@@ -9,9 +9,10 @@ use spa::param::audio::{AudioFormat, AudioInfoRaw, MAX_CHANNELS};
 use spa::pod::{Object, Pod, Value, serialize::PodSerializer};
 use tracing::{info, warn};
 
-use crate::sink::{AudioSink, SharedBuffer};
+use crate::sink::{AudioSink, DefaultSource, SharedBuffer};
 
 pub const NODE_NAME: &str = "airmic";
+const DEFAULT_SOURCE_KEY: &str = "default.configured.audio.source";
 
 pub struct PipeWireSink {
     pub set_default_source: bool,
@@ -100,7 +101,10 @@ impl AudioSink for PipeWireSink {
         )?;
         info!("PipeWire source \"{NODE_NAME}\" created");
         if self.set_default_source {
-            set_default_source();
+            match set_default_source() {
+                Ok(()) => info!("AirMic set as the default microphone"),
+                Err(e) => warn!("could not set the default microphone: {e:#}"),
+            }
         }
 
         mainloop.run();
@@ -108,23 +112,59 @@ impl AudioSink for PipeWireSink {
     }
 }
 
+/// Reads and sets the default input through `pw-metadata`.
+pub struct PipeWireDefault;
+
+impl DefaultSource for PipeWireDefault {
+    fn is_default(&self) -> bool {
+        let out = std::process::Command::new("pw-metadata")
+            .args(["0", DEFAULT_SOURCE_KEY])
+            .output();
+        out.is_ok_and(|out| {
+            configured_source_name(&String::from_utf8_lossy(&out.stdout)).as_deref()
+                == Some(NODE_NAME)
+        })
+    }
+
+    fn make_default(&self) -> anyhow::Result<()> {
+        set_default_source()
+    }
+}
+
+/// Returns the node name in a `pw-metadata` listing line such as
+/// `update: id:0 key:'…' value:'{"name":"airmic"}' type:'Spa:String:JSON'`.
+fn configured_source_name(listing: &str) -> Option<String> {
+    let value = listing.split("value:'").nth(1)?.split("' type:").next()?;
+    let value: serde_json::Value = serde_json::from_str(value).ok()?;
+    Some(value.get("name")?.as_str()?.to_string())
+}
+
 /// Makes AirMic the default input by node name, which survives node id changes across restarts.
-fn set_default_source() {
+fn set_default_source() -> anyhow::Result<()> {
     let value = format!(r#"{{ "name": "{NODE_NAME}" }}"#);
-    let result = std::process::Command::new("pw-metadata")
-        .args([
-            "0",
-            "default.configured.audio.source",
-            &value,
-            "Spa:String:JSON",
-        ])
-        .output();
-    match result {
-        Ok(out) if out.status.success() => info!("AirMic set as the default microphone"),
-        Ok(out) => warn!(
-            "pw-metadata failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ),
-        Err(e) => warn!("could not run pw-metadata: {e}"),
+    let out = std::process::Command::new("pw-metadata")
+        .args(["0", DEFAULT_SOURCE_KEY, &value, "Spa:String:JSON"])
+        .output()
+        .context("running pw-metadata")?;
+    anyhow::ensure!(
+        out.status.success(),
+        "pw-metadata failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_configured_source_name() {
+        let line = r#"update: id:0 key:'default.configured.audio.source' value:'{ "name": "airmic" }' type:'Spa:String:JSON'"#;
+        assert_eq!(configured_source_name(line).as_deref(), Some("airmic"));
+        assert_eq!(
+            configured_source_name("Found \"default\" metadata 38\n"),
+            None
+        );
     }
 }

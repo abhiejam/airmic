@@ -24,7 +24,7 @@ use crate::config::Config;
 use crate::control::ControlOptions;
 use crate::jitter::JitterBuffer;
 use crate::pairing::Pairing;
-use crate::pipewire_sink::PipeWireSink;
+use crate::pipewire_sink::{PipeWireDefault, PipeWireSink};
 use crate::sink::AudioSink;
 
 /// AirMic daemon: receives audio from the iPhone app and exposes it as a microphone.
@@ -87,7 +87,13 @@ async fn main() -> anyhow::Result<()> {
     info!("IPC on {}", socket.display());
 
     let (session_tx, session_rx) = watch::channel(None);
-    let ipc = ipc::Ipc::new(config_path, config.clone());
+    let ipc = ipc::Ipc::new(
+        session_rx.clone(),
+        buffer.clone(),
+        Box::new(PipeWireDefault),
+        config_path,
+        config.clone(),
+    );
     let opts = ControlOptions {
         audio_port: config.audio_port,
         no_auth: args.no_auth,
