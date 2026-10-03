@@ -87,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
         no_auth: args.no_auth,
     };
     tokio::select! {
-        _ = control::serve(listener, opts, session_tx, pairing) => {}
+        _ = control::serve(listener, opts, session_tx, pairing, buffer.clone()) => {}
         _ = receiver::receive(udp, session_rx.clone(), buffer.clone()) => {}
         _ = receiver::log_stats(session_rx, buffer) => {}
         result = sink_failed => return result.context("audio output thread died")?,
