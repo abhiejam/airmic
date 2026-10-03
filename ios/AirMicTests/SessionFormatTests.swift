@@ -44,6 +44,19 @@ struct SessionFormatTests {
     }
 }
 
+struct TranscriptTests {
+    @Test func countsWords() {
+        #expect(Transcript.wordCount("refactor the jitter buffer") == 4)
+        #expect(Transcript.wordCount("  PipeWire's   source, at 48,000 Hz — done. ") == 6)
+        #expect(Transcript.wordCount("") == 0)
+        #expect(Transcript.wordCount(" … ") == 0)
+    }
+
+    @Test func cleansWhitespace() {
+        #expect(Transcript.clean("  make it\n the  default ") == "make it the default")
+    }
+}
+
 struct WeekStatsTests {
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)

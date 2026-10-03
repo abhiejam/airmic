@@ -8,6 +8,7 @@ Python 3 standard library only.
   python3 tools/mock_control.py --pair 0427        # unknown phones must enter this code
   python3 tools/mock_control.py --wav session.wav  # save the audio it receives
   python3 tools/mock_control.py --drop-after 20    # close the control connection after 20 s (reconnect test)
+  python3 tools/mock_control.py --transcripts      # send fake transcript lines while audio flows
 
 Advertises `_airmic._tcp` over Bonjour (macOS `dns-sd`, Linux `avahi-publish`) so the
 phone finds it under Nearby. With --pair it prints the QR pairing link.
@@ -194,6 +195,20 @@ async def handle_control(reader, writer, server):
                             "jitter_ms": round(a.jitter_ms(), 2), "latency_ms": round(20 + a.jitter_ms(), 1)})
                 a.reset_window()
 
+        async def transcripts():
+            lines = ["create the PipeWire source by name", "then make it the default input",
+                     "and check the jitter buffer stays short", "refactor the reconnect backoff"]
+            index = 0
+            while True:
+                await asyncio.sleep(6)
+                if server.session_id is None or server.audio.received == 0:
+                    continue
+                words = lines[index % len(lines)].split()
+                await send({"type": "transcript", "text": " ".join(words[: len(words) // 2]), "final": False})
+                await asyncio.sleep(1)
+                await send({"type": "transcript", "text": " ".join(words), "final": True})
+                index += 1
+
         async def dropper():
             await asyncio.sleep(args.drop_after)
             log(f"control: dropping the connection (--drop-after {args.drop_after})")
@@ -202,6 +217,8 @@ async def handle_control(reader, writer, server):
         tasks = [asyncio.create_task(pinger()), asyncio.create_task(stats())]
         if args.drop_after:
             tasks.append(asyncio.create_task(dropper()))
+        if args.transcripts:
+            tasks.append(asyncio.create_task(transcripts()))
 
         while True:
             message = await read()
@@ -242,6 +259,7 @@ async def main():
     parser.add_argument("--pair", metavar="CODE", help="require pairing with this 4 digit code")
     parser.add_argument("--wav", metavar="FILE", help="save received audio to a WAV file")
     parser.add_argument("--drop-after", type=float, metavar="SECONDS", help="abort each control connection after this long")
+    parser.add_argument("--transcripts", action="store_true", help="send fake transcript lines while audio flows")
     parser.add_argument("--name", default=socket.gethostname().split(".")[0], help="computer name to advertise")
     parser.add_argument("--no-bonjour", action="store_true", help="don't advertise over Bonjour")
     args = parser.parse_args()

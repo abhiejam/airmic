@@ -86,3 +86,15 @@ enum WeekStats {
         return days.flatMap { (0..<7).contains($0) ? $0 : nil }
     }
 }
+
+enum Transcript {
+    /// Words as people count them: runs of letters or digits, so "PipeWire's" and "48,000" are one each.
+    static func wordCount(_ text: String) -> Int {
+        text.split { $0.isWhitespace }.filter { $0.contains { $0.isLetter || $0.isNumber } }.count
+    }
+
+    /// Trimmed, with runs of whitespace collapsed, for "Last thing you said".
+    static func clean(_ text: String) -> String {
+        text.split { $0.isWhitespace }.joined(separator: " ")
+    }
+}

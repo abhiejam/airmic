@@ -63,6 +63,10 @@ final class StreamSession {
     private(set) var dropouts = 0
     /// From the computer's `stats`, every 2 s while audio flows.
     private(set) var latencyMs: Int?
+    /// Words in final transcripts this session; nil until the computer sends one (transcription is optional).
+    private(set) var wordCount: Int?
+    /// The last final transcript line.
+    private(set) var lastTranscript: String?
     /// Recent mic levels, 0...1, oldest first; drives the level bars.
     private(set) var levels = [Float](repeating: 0, count: levelHistoryCount)
 
@@ -145,6 +149,8 @@ final class StreamSession {
         pendingCode = pairingCode
         muteCount = 0
         dropouts = 0
+        wordCount = nil
+        lastTranscript = nil
         reconnectAttempt = 0
         phase = .connecting
         openControl()
@@ -163,12 +169,14 @@ final class StreamSession {
 
     /// Ends the session and returns it, or nil if audio never started.
     func end() -> FocusSession? {
-        let finished: FocusSession? = if let startedAt, let computer {
-            FocusSession(
+        var finished: FocusSession?
+        if let startedAt, let computer {
+            let session = FocusSession(
                 start: startedAt, end: .now, computerName: computer.name,
                 goalMinutes: goalMinutes, mutes: muteCount, dropouts: dropouts)
-        } else {
-            nil
+            session.words = wordCount
+            session.lastTranscript = lastTranscript
+            finished = session
         }
         teardown()
         phase = .idle
@@ -284,8 +292,13 @@ final class StreamSession {
             }
         case let .paired(token):
             PairingTokens.save(token, for: computer.id)
-        case .transcript:
-            break // M6.1
+        case let .transcript(text, isFinal):
+            // Partial lines are replaced by the next one; only final lines count.
+            guard isFinal else { break }
+            let words = Transcript.wordCount(text)
+            guard words > 0 else { break }
+            wordCount = (wordCount ?? 0) + words
+            lastTranscript = Transcript.clean(text)
         case let .error(code, message):
             switch code {
             case "busy": fail("\(computer.name) is in use by another phone")

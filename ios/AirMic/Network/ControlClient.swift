@@ -22,9 +22,14 @@ final class ControlClient: @unchecked Sendable {
         case closed(reason: String?)
     }
 
-    static let pingInterval: TimeInterval = 2
-    static let peerTimeout: TimeInterval = 6
-    static let connectTimeout: TimeInterval = 5
+    /// docs/protocol.md §2.5. Tests shorten these.
+    struct Timing: Sendable {
+        var pingInterval: TimeInterval = 2
+        var peerTimeout: TimeInterval = 6
+        var connectTimeout: TimeInterval = 5
+
+        static let standard = Timing()
+    }
 
     let events: AsyncStream<Event>
 
@@ -32,6 +37,7 @@ final class ControlClient: @unchecked Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "io.airmic.control")
     private let greeting: [ControlMessage]
+    private let timing: Timing
 
     // Confined to `queue`.
     private var lineBuffer = LineBuffer()
@@ -41,7 +47,8 @@ final class ControlClient: @unchecked Sendable {
     private var lastReceived = Date()
     private var timer: DispatchSourceTimer?
 
-    init(endpoint: NWEndpoint, hello: ControlMessage, token: String?) {
+    init(endpoint: NWEndpoint, hello: ControlMessage, token: String?, timing: Timing = .standard) {
+        self.timing = timing
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         connection = NWConnection(to: endpoint, using: NWParameters(tls: nil, tcp: tcp))
@@ -55,7 +62,7 @@ final class ControlClient: @unchecked Sendable {
             connection.stateUpdateHandler = { [weak self] state in self?.handle(state) }
             connection.start(queue: queue)
             let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now() + 1, repeating: Self.pingInterval)
+            timer.schedule(deadline: .now() + min(1, timing.pingInterval), repeating: timing.pingInterval)
             timer.setEventHandler { [weak self] in self?.tick() }
             timer.resume()
             self.timer = timer
@@ -148,12 +155,12 @@ final class ControlClient: @unchecked Sendable {
     private func tick() {
         guard !isFinished else { return }
         guard isOpen else {
-            if Date().timeIntervalSince(startedAt) > Self.connectTimeout {
+            if Date().timeIntervalSince(startedAt) > timing.connectTimeout {
                 finish(reason: "Timed out connecting")
             }
             return
         }
-        if Date().timeIntervalSince(lastReceived) > Self.peerTimeout {
+        if Date().timeIntervalSince(lastReceived) > timing.peerTimeout {
             finish(reason: "The computer stopped responding")
         } else {
             write(.ping)
