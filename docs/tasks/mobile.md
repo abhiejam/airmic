@@ -99,13 +99,16 @@ Done when: fresh install → pick computer → enter code → streaming, and nex
 Done when: every mockup screen exists in light and dark and works with real data.
 
 ## M6 · Transcript on phone
-- [ ] **M6.1** Handle `transcript {text, final}`; word count into `SessionStore` (needs S4)
-- [ ] **M6.2** "Last thing you said" on Summary from the last final transcript
+- [x] **M6.1** Handle `transcript {text, final}`; word count into `SessionStore` (needs S4)
+  - Final lines only; partials ignored. `Transcript.wordCount` counts runs with a letter or digit. Words stay nil (shown as —) until a transcript arrives. Tested with `mock_control.py --transcripts`; real test waits for D6.4.
+- [x] **M6.2** "Last thing you said" on Summary from the last final transcript
+  - From `StreamSession.lastTranscript`, saved on `FocusSession`.
 
 ## M7 · Hardening and release
 - [ ] **M7.1** 2 h locked-screen soak test; battery use per hour noted (target < 10%)
 - [ ] **M7.2** Run the end to end checklist (PRD §12) on the phone side
-- [ ] **M7.3** Unit test coverage for Packetizer, codecs, state machine
+- [x] **M7.3** Unit test coverage for Packetizer, codecs, state machine
+  - `ControlClientTests`: 12 tests against an in-process fake server (greeting, ready, pairing, stats, transcripts, ping/pong, own pings, peer timeout, bye, unknown type, bad JSON, refused, close). Timings are injectable. Codecs and packetizer were already covered: 44 tests in all.
 - [ ] **M7.4** Screenshots and screen recording GIF for the README
 - [ ] **M7.5** Sideload install guide in the README (free Apple ID, 7 day re-sign)
 
