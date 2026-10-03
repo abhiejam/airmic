@@ -17,20 +17,14 @@ cargo build --release -p airmicd
 ```
 
 - [ ] The log shows `control channel on TCP 47800`, `audio channel on UDP 47801` and `IPC on …`.
-- [ ] `pactl list short sources | grep airmic` lists the source.
-- [ ] `pactl get-default-source` prints `airmic`.
+- [ ] `wpctl status` lists **AirMic** under Audio → Sources, marked `*` as the default.
+- [ ] `wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep node.name` prints `airmic`.
 
-If `ufw` is active (`sudo ufw status`), open the ports:
-
-```sh
-sudo ufw allow 47800/tcp
-sudo ufw allow 47801/udp
-sudo ufw allow 5353/udp   # mDNS, so the phone can find the PC
-```
+A firewall is only in the way if one is active. With `ufw` enabled, ask before changing it, then open 47800/tcp, 47801/udp and 5353/udp (mDNS).
 
 ## 2. Find and pair (M3.1, M3.3)
 
-- [ ] `avahi-browse -rt _airmic._tcp` shows this PC with TXT `id`, `name`, `v=1`.
+- [ ] The daemon log has no `mDNS advert failed` warning. (`avahi-browse -rt _airmic._tcp` shows the TXT record, if `avahi-utils` is installed.)
 - [ ] On the phone, tap **Connect to a computer**. The PC's hostname appears under **Nearby**.
 - [ ] Tap it. The daemon logs `pairing code NNNN`; type that code on the phone.
 - [ ] The daemon logs `phone paired` and `session 0x… ready`.
@@ -45,7 +39,7 @@ pw-play /tmp/airmic.wav
 
 - [ ] The recording is your voice, clear, without crackles or gaps.
 - [ ] In Claude Code, `/voice` transcribes what you say into the phone.
-- [ ] `pw-metadata -n settings 0 clock.quantum` and `clock.rate`: note them in the results below.
+- [ ] Note the quantum and rate the graph actually runs at from `pw-top` (QUANT and RATE on the AirMic line). `clock.quantum` in `pw-metadata` is only a setting and can differ.
 
 ## 4. Behaviour
 
@@ -62,7 +56,7 @@ pw-play /tmp/airmic.wav
 |---|---|
 | PC not under Nearby | mDNS blocked: open 5353/udp, or use **Enter IP address** (`ip -4 addr`, port 47800) |
 | "Couldn't reach …" | `airmicd` not running, or TCP 47800 blocked |
-| On air, but `pw-record` is silent | UDP 47801 blocked by the firewall |
+| On air, but `pw-record` is silent | UDP 47801 blocked by a firewall |
 | "in use by another phone" | Another session is active. Restart `airmicd` |
 | Code rejected | Codes last 2 minutes. Reconnect to get a fresh one. After 5 wrong codes, restart `airmicd` |
 
