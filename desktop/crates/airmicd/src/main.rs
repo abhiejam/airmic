@@ -1,5 +1,7 @@
 mod config;
 mod control;
+#[allow(dead_code)] // Removed once the UDP receiver (D2.5) feeds it.
+mod jitter;
 
 use std::io::IsTerminal;
 use std::net::Ipv6Addr;

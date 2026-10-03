@@ -43,8 +43,9 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [x] **D2.4** `airmicd` skeleton: tokio, `config.toml` (`directories` crate for paths), tracing to journald
   - Logs go to stderr, which journald captures under systemd (no time prefix there). No journald crate.
 - [ ] **D2.5** UDP receiver on 47801: validate magic, version, session id
-- [ ] **D2.6** Jitter buffer: reorder by sequence, adaptive 20–120 ms target, silence + short fade on loss, stats (loss, jitter)
-- [ ] **D2.7** Jitter buffer tests: loss, duplicates, reorder, late packets, sequence wrap
+- [x] **D2.6** Jitter buffer: reorder by sequence, adaptive 20–120 ms target, silence + short fade on loss, stats (loss, jitter)
+  - Pull model: the sink reads samples at its own clock. Clock drift is absorbed by dropping frames above target + 40 ms and rebuffering on underrun. Target = 20 ms + 4 × jitter, clamped to 20–120 ms.
+- [x] **D2.7** Jitter buffer tests: loss, duplicates, reorder, late packets, sequence wrap
 - [ ] **D2.8** `AudioSink` trait (write frames, report underruns)
 - [ ] **D2.9** PipeWire backend: virtual source `node.name=airmic`, `node.description=AirMic`, silence when no phone
 - [ ] **D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)
