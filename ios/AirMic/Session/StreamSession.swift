@@ -1,24 +1,50 @@
 import Foundation
+import Network
 import Observation
 import Synchronization
 import UIKit
 
-struct Computer: Codable, Equatable, Sendable {
+struct Computer: Codable, Equatable, Hashable, Sendable, Identifiable {
+    /// The computer's uuid (Bonjour TXT `id`, QR `id`), or `manual:<host>:<port>`.
+    var id: String
     var name: String
-    var host: String
+    /// Last known address. Nil for a Bonjour result not connected to yet.
+    var host: String?
     var port: UInt16
+    /// Bonjour instance name; preferred over `host`, which can change.
+    var serviceName: String?
+
+    static func manual(name: String, host: String, port: UInt16) -> Computer {
+        Computer(id: "manual:\(host):\(port)", name: name, host: host, port: port, serviceName: nil)
+    }
+
+    var endpoint: NWEndpoint? {
+        if let serviceName {
+            return .service(name: serviceName, type: Discovery.serviceType, domain: "local.", interface: nil)
+        }
+        guard let host, let port = NWEndpoint.Port(rawValue: port) else { return nil }
+        return .hostPort(host: NWEndpoint.Host(host), port: port)
+    }
 }
 
 /// The live focus session: control channel, mic capture, audio packets, mute and the numbers
 /// the home screen shows.
 ///
-/// idle → connecting → live ⇄ reconnecting (Wi-Fi blip) / paused (call, Siri) → idle.
+/// idle → connecting → (pairing →) live ⇄ reconnecting (Wi-Fi blip) / paused (call, Siri) → idle.
 @MainActor
 @Observable
 final class StreamSession {
+    enum PairingStep: Equatable {
+        case needsCode
+        case checking
+        case wrongCode
+    }
+
     enum Phase: Equatable {
         case idle
         case connecting
+        /// The computer asked for its 4 digit code.
+        case pairing(PairingStep)
         case live
         case reconnecting
         case paused
@@ -29,7 +55,8 @@ final class StreamSession {
 
     private(set) var phase: Phase = .idle
     private(set) var computer: Computer?
-    private(set) var recentComputer: Computer?
+    /// Computers connected to before, most recent first.
+    private(set) var knownComputers: [Computer] = []
     private(set) var isMuted = false
     private(set) var startedAt: Date?
     private(set) var muteCount = 0
@@ -57,12 +84,16 @@ final class StreamSession {
     private var reconnectAttempt = 0
     private var interrupted = false
     private let phoneID: String
+    /// From a QR code: sent as soon as the computer asks, without asking the user.
+    private var pendingCode: String?
+    private var sentToken = false
+    private var peerHost: NWEndpoint.Host?
 
     private enum Keys {
         static let goal = "focus.goalMinutes"
         static let voiceProcessing = "audio.voiceProcessing"
         static let haptics = "ui.haptics"
-        static let recent = "computer.recent"
+        static let known = "computers.known"
         static let phoneID = "phone.id"
     }
 
@@ -70,11 +101,9 @@ final class StreamSession {
         goalMinutes = defaults.object(forKey: Keys.goal) as? Int ?? 50
         voiceProcessing = defaults.object(forKey: Keys.voiceProcessing) as? Bool ?? true
         hapticsEnabled = defaults.object(forKey: Keys.haptics) as? Bool ?? true
-        if let data = defaults.data(forKey: Keys.recent),
-           var computer = try? JSONDecoder().decode(Computer.self, from: data) {
-            // M1 spike builds saved the netcat port.
-            if computer.port == 5555 { computer.port = AirMicProtocol.controlPort }
-            recentComputer = computer
+        if let data = defaults.data(forKey: Keys.known),
+           let computers = try? JSONDecoder().decode([Computer].self, from: data) {
+            knownComputers = computers
         }
         if let id = defaults.string(forKey: Keys.phoneID) {
             phoneID = id
@@ -84,22 +113,36 @@ final class StreamSession {
         }
     }
 
+    var recentComputer: Computer? { knownComputers.first }
+
     /// A session is under way (the timer runs and End session shows).
     var isActive: Bool {
         switch phase {
         case .connecting, .live, .reconnecting, .paused: true
-        case .idle, .failed: false
+        case .idle, .pairing, .failed: false
         }
     }
 
-    func connect(to computer: Computer) async {
-        if isActive { teardown() }
+    var isPairing: Bool {
+        if case .pairing = phase { return true }
+        return false
+    }
+
+    /// `pairingCode` comes from a QR code and is sent without asking the user.
+    func connect(to computer: Computer, pairingCode: String? = nil) async {
+        if isActive || isPairing { teardown() }
         guard await AudioCapture.requestPermission() else {
             phase = .failed("Microphone access is off. Turn it on in Settings.")
             return
         }
+        // Keep what we learned last time (address) for a computer we know.
+        var computer = computer
+        if let known = knownComputers.first(where: { $0.id == computer.id }) {
+            computer.host = computer.host ?? known.host
+            computer.serviceName = computer.serviceName ?? known.serviceName
+        }
         self.computer = computer
-        remember(computer)
+        pendingCode = pairingCode
         muteCount = 0
         dropouts = 0
         reconnectAttempt = 0
@@ -132,9 +175,28 @@ final class StreamSession {
         return finished
     }
 
-    func forgetRecent() {
-        recentComputer = nil
-        defaults.removeObject(forKey: Keys.recent)
+    /// On launch: reconnect to the last computer, no taps.
+    func autoConnect() async {
+        guard phase == .idle, let computer = recentComputer else { return }
+        await connect(to: computer)
+    }
+
+    func submitPairingCode(_ code: String) {
+        guard isPairing, code.count == 4 else { return }
+        phase = .pairing(.checking)
+        client?.send(.pair(code: code))
+    }
+
+    func cancelPairing() {
+        guard isPairing else { return }
+        teardown()
+        phase = .idle
+    }
+
+    func forget(_ computer: Computer) {
+        PairingTokens.delete(for: computer.id)
+        knownComputers.removeAll { $0.id == computer.id }
+        saveKnown()
     }
 
     /// Maps RMS to 0...1 on a -55...-10 dBFS scale: room noise near 0, speech near the top.
@@ -153,15 +215,17 @@ final class StreamSession {
     // MARK: - Control channel
 
     private func openControl() {
-        guard let computer,
-              let client = ControlClient(
-                host: computer.host, port: computer.port,
-                hello: .hello(v: AirMicProtocol.version, phoneID: phoneID, phoneName: UIDevice.current.name),
-                token: nil)
-        else {
+        guard let computer, let endpoint = computer.endpoint else {
             fail("That address doesn't look right")
             return
         }
+        let token = PairingTokens.token(for: computer.id)
+        sentToken = token != nil
+        peerHost = nil
+        let client = ControlClient(
+            endpoint: endpoint,
+            hello: .hello(v: AirMicProtocol.version, phoneID: phoneID, phoneName: UIDevice.current.name),
+            token: token)
         self.client = client
         Task { [weak self] in
             for await event in client.events {
@@ -172,20 +236,28 @@ final class StreamSession {
     }
 
     private func handle(_ event: ControlClient.Event, from source: ControlClient) {
-        guard source === client, let computer else { return }
+        guard source === client, var computer else { return }
         switch event {
+        case let .connected(host):
+            peerHost = host
         case let .ready(sessionID, udpPort, sampleRate):
             guard sampleRate == AirMicProtocol.sampleRate else {
                 fail("\(computer.name) asked for \(sampleRate) Hz audio; AirMic sends 48000 Hz")
                 return
             }
-            guard let sender = UDPSender(host: computer.host, port: udpPort) else {
+            guard let host = peerHost ?? computer.host.map({ NWEndpoint.Host($0) }),
+                  let sender = UDPSender(host: host, port: udpPort)
+            else {
                 fail("\(computer.name) sent a bad audio port")
                 return
             }
             sender.start()
             pipe.attach(sender: sender, sessionID: sessionID)
             reconnectAttempt = 0
+            // Keep a routable address for display and fallback, not a 169.254 link-local one.
+            if case let .ipv4(address) = host, !address.isLinkLocal { computer.host = "\(address)" }
+            self.computer = computer
+            remember(computer)
             if isMuted { source.send(.mute(on: true)) }
             if startedAt == nil {
                 do {
@@ -200,12 +272,25 @@ final class StreamSession {
         case let .stats(_, _, latency):
             latencyMs = Int(latency.rounded())
         case .pairRequired:
-            fail("\(computer.name) asks for a pairing code. Pairing is coming; for now run airmicd --no-auth.")
-        case .paired, .transcript:
-            break // M3.3, M6.1
+            // A token we sent is no longer known to the computer.
+            if sentToken { PairingTokens.delete(for: computer.id) }
+            sentToken = false
+            if let code = pendingCode {
+                pendingCode = nil
+                phase = .pairing(.checking)
+                source.send(.pair(code: code))
+            } else {
+                phase = .pairing(.needsCode)
+            }
+        case let .paired(token):
+            PairingTokens.save(token, for: computer.id)
+        case .transcript:
+            break // M6.1
         case let .error(code, message):
             switch code {
             case "busy": fail("\(computer.name) is in use by another phone")
+            case "bad_code": phase = .pairing(.wrongCode)
+            case "pair_locked": fail("Too many wrong codes. Show a new code on \(computer.name) and try again.")
             case "unsupported_version": fail("\(computer.name) runs a different AirMic version")
             default: fail(message.isEmpty ? "Error from \(computer.name): \(code)" : message)
             }
@@ -219,9 +304,12 @@ final class StreamSession {
         pipe.detach()
         latencyMs = nil
         guard let computer, startedAt != nil else {
-            // Never got going: the computer isn't there.
+            // Never got going: the computer isn't there, or pairing ended.
+            let wasPairing = isPairing
             teardown()
-            phase = .failed("Couldn't reach \(computer?.name ?? "the computer"). Is AirMic running on it?")
+            phase = .failed(wasPairing
+                ? "Pairing with \(computer?.name ?? "the computer") stopped. Try again."
+                : "Couldn't reach \(computer?.name ?? "the computer"). Is AirMic running on it?")
             return
         }
         guard reason != nil else {
@@ -257,6 +345,8 @@ final class StreamSession {
         startedAt = nil
         isMuted = false
         interrupted = false
+        pendingCode = nil
+        peerHost = nil
         pipe.setMuted(false)
         latencyMs = nil
         levels = Self.silentLevels
@@ -304,9 +394,14 @@ final class StreamSession {
     }
 
     private func remember(_ computer: Computer) {
-        recentComputer = computer
-        if let data = try? JSONEncoder().encode(computer) {
-            defaults.set(data, forKey: Keys.recent)
+        knownComputers.removeAll { $0.id == computer.id }
+        knownComputers.insert(computer, at: 0)
+        saveKnown()
+    }
+
+    private func saveKnown() {
+        if let data = try? JSONEncoder().encode(knownComputers) {
+            defaults.set(data, forKey: Keys.known)
         }
     }
 }

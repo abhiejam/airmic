@@ -1,13 +1,23 @@
+import AVFoundation
 import SwiftUI
 
 struct ConnectView: View {
     @Environment(StreamSession.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @State private var discovery = Discovery()
+    @AppStorage("localNetwork.explained") private var localNetworkExplained = false
     @State private var showManualEntry = false
+    @State private var showScanner = false
+    /// The computer the user tapped; its card shows progress, the code entry or an error.
+    @State private var selectedID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            RoundIconButton(systemImage: "chevron.left", label: "Back") { dismiss() }
+            RoundIconButton(systemImage: "chevron.left", label: "Back") {
+                session.cancelPairing()
+                dismiss()
+            }
 
             Text("Connect to a computer")
                 .font(.system(size: 28, weight: .semibold))
@@ -19,44 +29,25 @@ struct ConnectView: View {
                 .foregroundStyle(Theme.muted)
                 .padding(.top, 10)
 
-            Text("Nearby")
-                .sectionLabelStyle()
-                .padding(.top, 40)
-
-            Group {
-                if let recent = session.recentComputer {
-                    ComputerRow(computer: recent) {
-                        Task {
-                            await session.connect(to: recent)
-                            dismiss()
-                        }
-                    }
-                } else {
-                    Text("Computers running the AirMic desktop app will show up here.")
-                        .font(.system(size: 14))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    nearbyHeader
+                    nearbyContent
+                    Text("Computer not listed? Get the AirMic desktop app.")
+                        .font(.system(size: 13))
                         .foregroundStyle(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).strokeBorder(Theme.line))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 2)
                 }
+                .padding(.top, 40)
+                .padding(.bottom, 16)
             }
-            .padding(.top, 14)
-
-            Text("Computer not listed? Get the AirMic desktop app.")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.muted)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 16)
-
-            Spacer()
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
 
             Text("Other ways").sectionLabelStyle()
             HStack(spacing: 12) {
-                OtherWayButton(title: "Scan QR code", systemImage: "qrcode.viewfinder") {}
-                    .disabled(true)
-                    .opacity(0.45)
-                    .accessibilityHint("Available once the desktop app shows a pairing code")
+                OtherWayButton(title: "Scan QR code", systemImage: "qrcode.viewfinder") { showScanner = true }
                 OtherWayButton(title: "Enter IP address", systemImage: "number") { showManualEntry = true }
             }
             .padding(.top, 14)
@@ -68,47 +59,150 @@ struct ConnectView: View {
         .background(Theme.bg.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            if localNetworkExplained { discovery.start() }
+            if session.isPairing { selectedID = session.computer?.id }
+        }
+        .onDisappear { discovery.stop() }
+        .onChange(of: session.phase) { _, phase in
+            if phase == .live || phase == .paused { dismiss() }
+        }
         .sheet(isPresented: $showManualEntry) {
-            ManualEntrySheet(initial: session.recentComputer) { computer in
+            ManualEntrySheet(initial: session.knownComputers.first { $0.serviceName == nil }) { computer in
                 showManualEntry = false
-                Task {
-                    await session.connect(to: computer)
-                    dismiss()
-                }
+                connect(computer)
             }
             .presentationDetents([.medium])
         }
+        .fullScreenCover(isPresented: $showScanner) {
+            QRScannerView { link in
+                showScanner = false
+                connect(link.computer, pairingCode: link.code)
+            }
+        }
     }
 
-    private struct ComputerRow: View {
+    // MARK: - Nearby
+
+    private var nearbyHeader: some View {
+        HStack {
+            Text("Nearby").sectionLabelStyle()
+            Spacer()
+            if discovery.state == .searching {
+                HStack(spacing: 6) {
+                    Circle().fill(Theme.accent).frame(width: 6, height: 6)
+                    Text("Searching")
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.muted)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nearbyContent: some View {
+        if !localNetworkExplained {
+            NoticeCard(
+                title: "Find your computer",
+                message: "AirMic looks for computers running AirMic on your Wi-Fi. iOS will ask you to allow this.",
+                button: "Continue"
+            ) {
+                localNetworkExplained = true
+                discovery.start()
+            }
+        } else if discovery.state == .denied {
+            NoticeCard(
+                title: "Local Network is off",
+                message: "AirMic can't see computers on your Wi-Fi. Turn on Local Network for AirMic in Settings, or enter the IP address below.",
+                button: "Open Settings"
+            ) {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+        } else if rows.isEmpty {
+            Text("Computers running the AirMic desktop app will show up here.")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).strokeBorder(Theme.line))
+        }
+        ForEach(rows) { row in
+            ComputerCard(
+                computer: row.computer,
+                subtitle: row.subtitle,
+                isSelected: row.computer.id == selectedID,
+                status: row.computer.id == selectedID ? cardStatus : .idle,
+                onTap: { connect(row.computer) },
+                onCode: { session.submitPairingCode($0) })
+        }
+    }
+
+    private struct Row: Identifiable {
         let computer: Computer
+        let subtitle: String
+        var id: String { computer.id }
+    }
+
+    /// Discovered computers first, then known ones that aren't advertising right now.
+    private var rows: [Row] {
+        let known = Dictionary(session.knownComputers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var rows = discovery.computers.map { found in
+            var computer = found
+            computer.host = known[found.id]?.host
+            return Row(computer: computer, subtitle: computer.host.map { "On this Wi-Fi · \($0)" } ?? "On this Wi-Fi")
+        }
+        let shown = Set(rows.map(\.id))
+        for computer in session.knownComputers where !shown.contains(computer.id) {
+            rows.append(Row(computer: computer, subtitle: "Recent · \(computer.host ?? computer.serviceName ?? "")"))
+        }
+        return rows
+    }
+
+    private var cardStatus: ComputerCard.Status {
+        switch session.phase {
+        case .connecting: .connecting
+        case .pairing(let step): .pairing(step)
+        case .failed(let message): .failed(message)
+        default: .idle
+        }
+    }
+
+    private func connect(_ computer: Computer, pairingCode: String? = nil) {
+        selectedID = computer.id
+        Task { await session.connect(to: computer, pairingCode: pairingCode) }
+    }
+
+    // MARK: - Pieces
+
+    private struct NoticeCard: View {
+        let title: String
+        let message: String
+        let button: String
         let action: () -> Void
 
         var body: some View {
-            Button(action: action) {
-                HStack(spacing: 12) {
-                    Image(systemName: "desktopcomputer")
-                        .font(.system(size: 19))
-                        .foregroundStyle(Theme.accent)
-                        .frame(width: 44, height: 44)
-                        .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 14))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(computer.name)
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Recent · \(computer.host)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Theme.muted)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title).font(.system(size: 16, weight: .semibold))
+                Text(message)
+                    .font(.system(size: 14))
+                    .lineSpacing(2)
+                    .foregroundStyle(Theme.muted)
+                Button(action: action) {
+                    Text(button)
+                        .font(.system(size: 15, weight: .medium))
+                        .padding(.horizontal, 20)
+                        .frame(height: 44)
+                        .background(Theme.accent, in: Capsule())
+                        .foregroundStyle(Theme.onAccent)
                 }
-                .padding(20)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).strokeBorder(Theme.accent, lineWidth: 1.5))
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).strokeBorder(Theme.line))
         }
     }
 
@@ -133,6 +227,162 @@ struct ConnectView: View {
     }
 }
 
+/// One computer. When selected it expands to show connecting, the code entry, or an error.
+private struct ComputerCard: View {
+    enum Status: Equatable {
+        case idle
+        case connecting
+        case pairing(StreamSession.PairingStep)
+        case failed(String)
+    }
+
+    let computer: Computer
+    let subtitle: String
+    let isSelected: Bool
+    let status: Status
+    let onTap: () -> Void
+    let onCode: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Button(action: onTap) {
+                HStack(spacing: 12) {
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: 19))
+                        .foregroundStyle(isSelected ? Theme.accent : Theme.muted)
+                        .frame(width: 44, height: 44)
+                        .background(isSelected ? Theme.accentSoft : Theme.bg, in: RoundedRectangle(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(computer.name)
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Theme.muted)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    trailing
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(status == .connecting || isPairing)
+
+            if isPairing || isFailed {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                details
+            }
+        }
+        .padding(20)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .strokeBorder(isSelected ? Theme.accent : Theme.line, lineWidth: isSelected ? 1.5 : 1))
+        .animation(.snappy(duration: 0.25), value: status)
+    }
+
+    private var isPairing: Bool {
+        if case .pairing = status { return true }
+        return false
+    }
+
+    private var isFailed: Bool {
+        if case .failed = status { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        switch status {
+        case .connecting, .pairing(.checking):
+            ProgressView()
+        case .pairing:
+            Image(systemName: "lock")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+        default:
+            Image(systemName: "chevron.right")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+        }
+    }
+
+    @ViewBuilder
+    private var details: some View {
+        switch status {
+        case .pairing(let step):
+            VStack(alignment: .leading, spacing: 14) {
+                Text(step == .wrongCode
+                     ? "That code didn't match. Check the code on \(computer.name)."
+                     : "Enter the code shown on \(computer.name)")
+                    .font(.system(size: 14))
+                    .foregroundStyle(step == .wrongCode ? Theme.warn : Theme.muted)
+                PairingCodeField(isChecking: step == .checking, resetTrigger: step == .wrongCode, onComplete: onCode)
+            }
+        case .failed(let message):
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.warn)
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// Four digit boxes over one hidden number field.
+private struct PairingCodeField: View {
+    let isChecking: Bool
+    let resetTrigger: Bool
+    let onComplete: (String) -> Void
+    @State private var code = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack {
+            TextField("", text: $code)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($focused)
+                .opacity(0.02)
+                .accessibilityLabel("Pairing code")
+            HStack(spacing: 10) {
+                ForEach(0..<4, id: \.self) { index in
+                    let digit = index < code.count ? String(Array(code)[index]) : ""
+                    Text(digit)
+                        .font(.system(size: 26, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 60)
+                        .background(Theme.bg, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .strokeBorder(
+                                    focused && index == min(code.count, 3) ? Theme.accent : Theme.line,
+                                    lineWidth: focused && index == min(code.count, 3) ? 2 : 1))
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .disabled(isChecking)
+        .opacity(isChecking ? 0.5 : 1)
+        .onAppear { focused = true }
+        .onChange(of: code) { _, newValue in
+            let digits = String(newValue.filter(\.isNumber).prefix(4))
+            if digits != newValue { code = digits }
+            if digits.count == 4 { onComplete(digits) }
+        }
+        .onChange(of: resetTrigger) { _, wrong in
+            if wrong {
+                code = ""
+                focused = true
+            }
+        }
+    }
+}
+
 /// Manual IP entry (M3.6).
 struct ManualEntrySheet: View {
     let onConnect: (Computer) -> Void
@@ -143,12 +393,12 @@ struct ManualEntrySheet: View {
 
     init(initial: Computer?, onConnect: @escaping (Computer) -> Void) {
         self.onConnect = onConnect
-        _host = State(initialValue: initial?.host ?? "")
+        _host = State(initialValue: initial?.serviceName == nil ? initial?.host ?? "" : "")
         _port = State(initialValue: String(initial?.port ?? AirMicProtocol.controlPort))
         _name = State(initialValue: initial?.name ?? "")
     }
 
-    static func isValidHost(_ host: String) -> Bool {
+    nonisolated static func isValidHost(_ host: String) -> Bool {
         // Only digits and dots: a full dotted quad. (IPv4Address accepts "192.168.20" shorthand.)
         if host.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }) {
             let parts = host.split(separator: ".", omittingEmptySubsequences: false)
@@ -186,7 +436,7 @@ struct ManualEntrySheet: View {
             PrimaryButton(title: "Connect") {
                 guard isValid, let portNumber else { return }
                 let name = name.trimmingCharacters(in: .whitespaces)
-                onConnect(Computer(name: name.isEmpty ? trimmedHost : name, host: trimmedHost, port: portNumber))
+                onConnect(.manual(name: name.isEmpty ? trimmedHost : name, host: trimmedHost, port: portNumber))
             }
             .disabled(!isValid)
             .opacity(isValid ? 1 : 0.5)
@@ -211,7 +461,3 @@ struct ManualEntrySheet: View {
     }
 }
 
-#Preview {
-    NavigationStack { ConnectView() }
-        .environment(StreamSession())
-}

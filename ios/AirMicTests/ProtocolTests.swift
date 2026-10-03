@@ -218,3 +218,25 @@ struct ReconnectTests {
         #expect(delays.dropFirst(3).allSatisfy { $0 == .seconds(2) })
     }
 }
+
+struct PairingLinkTests {
+    @Test func parsesTheSpecExample() throws {
+        let link = try #require(PairingLink("airmic://pair?host=192.168.20.42&port=47800&id=3f2504e0-4f89-41d3-9a0c-0305e82c3301&code=0427"))
+        #expect(link.host == "192.168.20.42")
+        #expect(link.port == 47800)
+        #expect(link.computerID == "3f2504e0-4f89-41d3-9a0c-0305e82c3301")
+        #expect(link.code == "0427")
+        #expect(link.computer.id == link.computerID)
+    }
+
+    @Test func portDefaultsToControlPort() {
+        #expect(PairingLink("airmic://pair?host=h&id=x&code=1234")?.port == 47800)
+    }
+
+    @Test func rejectsOtherLinks() {
+        #expect(PairingLink("https://airmic.io/pair?host=h&id=x&code=1234") == nil)
+        #expect(PairingLink("airmic://pair?host=h&id=x&code=12") == nil)
+        #expect(PairingLink("airmic://pair?host=h&id=x&code=12a4") == nil)
+        #expect(PairingLink("airmic://pair?id=x&code=1234") == nil)
+    }
+}

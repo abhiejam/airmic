@@ -13,7 +13,7 @@ struct HomeView: View {
 
     private var mode: Mode {
         switch session.phase {
-        case .idle, .failed: .idle
+        case .idle, .pairing, .failed: .idle
         case .live: session.isMuted ? .muted : .live
         case .connecting, .reconnecting, .paused: session.isMuted ? .muted : .waiting
         }
@@ -46,6 +46,10 @@ struct HomeView: View {
             .foregroundStyle(Theme.ink)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showConnect) { ConnectView() }
+            .onChange(of: session.isPairing) { _, pairing in
+                // E.g. auto-connect at launch hit a computer that forgot this phone.
+                if pairing { showConnect = true }
+            }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(item: $summary) { finished in
                 SummaryView(focus: finished) {
@@ -105,7 +109,7 @@ struct HomeView: View {
     private var statusDot: Color {
         switch session.phase {
         case .idle, .failed: Theme.muted
-        case .connecting, .reconnecting, .paused: session.isMuted ? Theme.warn : Theme.accent
+        case .connecting, .pairing, .reconnecting, .paused: session.isMuted ? Theme.warn : Theme.accent
         case .live: session.isMuted ? Theme.warn : Theme.ok
         }
     }
@@ -115,6 +119,7 @@ struct HomeView: View {
         case .idle: "No computer connected"
         case .failed(let reason): reason
         case .connecting: "Connecting to \(computerName)"
+        case .pairing: "Pairing with \(computerName)"
         case .reconnecting: "Reconnecting to \(computerName)"
         case .paused: "Paused · \(computerName)"
         case .live: session.isMuted ? "Off air · \(computerName)" : "On air · \(computerName)"

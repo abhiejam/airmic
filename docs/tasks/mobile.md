@@ -44,17 +44,17 @@ Done when: you can talk into the phone with the screen locked and use it as the 
 ## M2 · Protocol client
 - [x] **M2.1** `Protocol.swift`: 16 byte header encode/decode, control message `Codable` types (needs S1)
   - `Network/Protocol.swift`: `AudioHeader`, `ControlMessage`, `LineBuffer`, `Packetizer`.
-- [ ] **M2.2** Unit tests against `docs/protocol/vectors.json` (same vectors the Rust side uses)
-  - `AirMicTests/ProtocolTests.swift` reads `docs/protocol/vectors.json` from the repo (no copy). Tick when the simulator run passes.
+- [x] **M2.2** Unit tests against `docs/protocol/vectors.json` (same vectors the Rust side uses)
+  - `AirMicTests/ProtocolTests.swift` reads `docs/protocol/vectors.json` from the repo (no copy). All pass (30 tests total).
 - [x] **M2.3** `Packetizer`: sequence, timestamp, session id, muted flag; `AudioSender` uses it
 - [x] **M2.4** `ControlClient`: TCP `NWConnection`, newline JSON framing, `hello` → `ready`, `ping/pong` keepalive (2 s, 6 s timeout), `bye` (needs S2 for real testing)
   - 2026-10-03: hello → ready → audio → bye verified on iPhone against `tools/mock_control.py`.
 - [x] **M2.5** `tools/mock_control.py`: tiny fake control server for testing before S2
-  - Also advertises nothing yet; `--pair CODE`, `--wav FILE`, `--drop-after SECONDS`.
-- [ ] **M2.6** Connection state machine: idle → connecting → live → muted → reconnecting; exponential backoff, resume within 3 s after Wi-Fi blip
-  - Built (`StreamSession`: backoff 0.25/0.5/1/2 s, capped at 2 s). Wi-Fi toggle test on the phone pending.
-- [ ] **M2.7** Mute: send `mute {on}` and header-only packets at 10/s while muted
-  - Built. Phone test pending.
+  - Options: `--pair CODE`, `--wav FILE`, `--drop-after SECONDS`; advertises over Bonjour and prints the QR link.
+- [x] **M2.6** Connection state machine: idle → connecting → live → muted → reconnecting; exponential backoff, resume within 3 s after Wi-Fi blip
+  - Backoff 0.25/0.5/1/2 s, capped at 2 s. 2026-10-03: Wi-Fi off/on on the iPhone reconnected with the stored token 3 s after the mock timed out.
+- [x] **M2.7** Mute: send `mute {on}` and header-only packets at 10/s while muted
+  - Verified on the iPhone: `mute {on}` reaches the mock, before and after a reconnect.
 - [ ] **M2.8** Handle `stats` (latency for the status pill)
   - Built: latency in the status pill. Phone test pending.
 - [ ] **M2.9** Audio interruptions (call, Siri) and route changes (AirPods): pause, show reason, auto-resume
@@ -64,10 +64,15 @@ Done when: phone streams to `airmicd`, mute works, a Wi-Fi toggle reconnects by 
 
 ## M3 · Discovery and pairing
 - [ ] **M3.1** `Discovery`: `NWBrowser` for `_airmic._tcp`, list with name and IP (needs S3)
+  - Built (`Discovery`, merges with known computers). The mock advertises via `dns-sd`/`avahi-publish`. Confirm on the iPhone.
 - [ ] **M3.2** Local Network permission: first-run explainer, denied state with link to Settings
-- [ ] **M3.3** Pairing: `pair_required` → 4 digit code entry → `paired {token}`; error and retry states (needs S3)
-- [ ] **M3.4** Keychain store for tokens; paired computers list; auto-connect to last computer on launch
+  - Built: explainer card before the first browse, denied state (`kDNSServiceErr_PolicyDenied`) with Open Settings.
+- [x] **M3.3** Pairing: `pair_required` → 4 digit code entry → `paired {token}`; error and retry states (needs S3)
+  - Inline code entry in the Connect card; `bad_code` keeps the connection, `pair_locked` ends it. Verified on the iPhone with `mock_control.py --pair 0427`.
+- [x] **M3.4** Keychain store for tokens; paired computers list; auto-connect to last computer on launch
+  - `PairingTokens` (Keychain, after first unlock), `knownComputers` list in Settings with swipe to forget, `autoConnect()` on launch. Token reconnect verified on the iPhone.
 - [ ] **M3.5** QR scanner (host, port, id, code) with camera permission handling
+  - Built: `QRScannerView` + `PairingLink`; `airmic://` URL scheme opens the app from the Camera. Scan test pending.
 - [x] **M3.6** Manual IP entry sheet with validation
   - `ManualEntrySheet`: IPv4 or hostname, port, optional name.
 
@@ -79,7 +84,8 @@ Done when: fresh install → pick computer → enter code → streaming, and nex
 - [x] **M4.3** Drive mic rings and level bars from real RMS (smoothed, 30 fps)
 - [x] **M4.4** Home · muted and Home · no computer states
 - [x] **M4.5** Mute button: haptic, animation, accessibility label/state
-- [ ] **M4.6** Connect screen (nearby list, inline code, other ways, desktop app link)
+- [x] **M4.6** Connect screen (nearby list, inline code, other ways, desktop app link)
+  - Nearby list with live discovery, inline code, QR and IP buttons.
   - Built; "Nearby" shows only the recent computer until Discovery (S3). QR button disabled until M3.5.
 - [x] **M4.7** `SessionStore` + SwiftData model: start/end, goal, mutes, dropouts, words
   - `StreamSession` (live state) + SwiftData `FocusSession`. Words and last transcript stay nil until S4.

@@ -9,12 +9,21 @@ struct SettingsView: View {
         @Bindable var session = session
         NavigationStack {
             Form {
-                Section("Computer") {
-                    if let computer = session.recentComputer {
-                        LabeledContent(computer.name, value: "\(computer.host):\(computer.port)")
-                        Button("Forget this computer", role: .destructive) { session.forgetRecent() }
-                    } else {
-                        Text("No computer yet").foregroundStyle(Theme.muted)
+                Section {
+                    if session.knownComputers.isEmpty {
+                        Text("No computers yet").foregroundStyle(Theme.muted)
+                    }
+                    ForEach(session.knownComputers) { computer in
+                        LabeledContent(computer.name, value: computer.host ?? computer.serviceName ?? "")
+                            .swipeActions {
+                                Button("Forget", role: .destructive) { session.forget(computer) }
+                            }
+                    }
+                } header: {
+                    Text("Computers")
+                } footer: {
+                    if !session.knownComputers.isEmpty {
+                        Text("Swipe left to forget a computer. You'll need its code to pair again.")
                     }
                 }
                 Section("Focus") {
