@@ -11,6 +11,7 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 directories = "6.0.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
+pipewire = { version = "0.10.1", features = ["v0_3_49"] }
 rand = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "sync", "signal"] }

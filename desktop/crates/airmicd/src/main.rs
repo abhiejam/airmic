@@ -1,20 +1,27 @@
 mod config;
 mod control;
-#[allow(dead_code)] // Removed once the UDP receiver (D2.5) feeds it.
 mod jitter;
+mod pipewire_sink;
+mod receiver;
+mod sink;
 
 use std::io::IsTerminal;
 use std::net::Ipv6Addr;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use clap::Parser;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, UdpSocket};
+use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tracing::info;
 
 use crate::config::Config;
 use crate::control::ControlOptions;
+use crate::jitter::JitterBuffer;
+use crate::pipewire_sink::PipeWireSink;
+use crate::sink::AudioSink;
 
 /// AirMic daemon: receives audio from the iPhone app and exposes it as a microphone.
 #[derive(Parser)]
@@ -56,12 +63,28 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("binding TCP {}", config.control_port))?;
     info!("control channel on TCP {}", config.control_port);
 
-    let (session_tx, _session_rx) = watch::channel(None);
+    let udp = UdpSocket::bind((Ipv6Addr::UNSPECIFIED, config.audio_port))
+        .await
+        .with_context(|| format!("binding UDP {}", config.audio_port))?;
+    info!("audio channel on UDP {}", config.audio_port);
+
+    let buffer = Arc::new(Mutex::new(JitterBuffer::new()));
+    let sink: Box<dyn AudioSink> = Box::new(PipeWireSink);
+    let (sink_failed_tx, sink_failed) = oneshot::channel();
+    let sink_buffer = buffer.clone();
+    std::thread::spawn(move || {
+        let _ = sink_failed_tx.send(sink.run(sink_buffer));
+    });
+
+    let (session_tx, session_rx) = watch::channel(None);
     let opts = ControlOptions {
         audio_port: config.audio_port,
     };
     tokio::select! {
         _ = control::serve(listener, opts, session_tx) => {}
+        _ = receiver::receive(udp, session_rx.clone(), buffer.clone()) => {}
+        _ = receiver::log_stats(session_rx, buffer) => {}
+        result = sink_failed => return result.context("audio output thread died")?,
         _ = tokio::signal::ctrl_c() => info!("shutting down"),
     }
     Ok(())
