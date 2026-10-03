@@ -1,6 +1,7 @@
 mod config;
 mod control;
 mod jitter;
+mod mdns;
 mod pipewire_sink;
 mod receiver;
 mod sink;
@@ -15,7 +16,7 @@ use clap::Parser;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::oneshot;
 use tokio::sync::watch;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::control::ControlOptions;
@@ -62,6 +63,9 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding TCP {}", config.control_port))?;
     info!("control channel on TCP {}", config.control_port);
+    let advert = mdns::advertise(config.control_port)
+        .inspect_err(|e| warn!("mDNS advert failed, phones must connect by IP: {e:#}"))
+        .ok();
 
     let udp = UdpSocket::bind((Ipv6Addr::UNSPECIFIED, config.audio_port))
         .await
@@ -88,6 +92,9 @@ async fn main() -> anyhow::Result<()> {
         _ = receiver::log_stats(session_rx, buffer) => {}
         result = sink_failed => return result.context("audio output thread died")?,
         _ = tokio::signal::ctrl_c() => info!("shutting down"),
+    }
+    if let Some(advert) = advert {
+        advert.withdraw();
     }
     Ok(())
 }
