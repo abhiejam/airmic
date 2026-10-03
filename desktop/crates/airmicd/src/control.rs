@@ -1,5 +1,4 @@
-//! TCP control channel (docs/protocol.md §2): hello, ready, keepalive, mute, bye.
-//! No pairing yet (D3.3): every phone that says hello gets a session, as with `--no-auth`.
+//! TCP control channel (docs/protocol.md §2): hello, pairing, ready, keepalive, mute, bye.
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -11,6 +10,8 @@ use tokio::sync::watch;
 use tokio::time::{Instant, interval};
 use tokio_util::codec::{Framed, LinesCodec};
 use tracing::{info, warn};
+
+use crate::pairing::{PairOutcome, SharedPairing};
 
 const MAX_LINE: usize = 64 * 1024;
 const PING_EVERY: Duration = Duration::from_secs(2);
@@ -30,9 +31,18 @@ pub type SessionTx = watch::Sender<Option<Session>>;
 #[derive(Debug, Clone)]
 pub struct ControlOptions {
     pub audio_port: u16,
+    /// Accept any phone without pairing (development).
+    pub no_auth: bool,
 }
 
-pub async fn serve(listener: TcpListener, opts: ControlOptions, session: SessionTx) {
+type Conn = Framed<TcpStream, LinesCodec>;
+
+pub async fn serve(
+    listener: TcpListener,
+    opts: ControlOptions,
+    session: SessionTx,
+    pairing: SharedPairing,
+) {
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(conn) => conn,
@@ -41,10 +51,11 @@ pub async fn serve(listener: TcpListener, opts: ControlOptions, session: Session
                 continue;
             }
         };
-        let (opts, session) = (opts.clone(), session.clone());
+        let (opts, session, pairing) = (opts.clone(), session.clone(), pairing.clone());
         tokio::spawn(async move {
             let mut session_id = None;
-            if let Err(e) = handle_phone(stream, peer, &opts, &session, &mut session_id).await {
+            let phone = handle_phone(stream, peer, &opts, &session, &pairing, &mut session_id);
+            if let Err(e) = phone.await {
                 info!(%peer, "control connection ended: {e}");
             }
             if let Some(id) = session_id {
@@ -70,12 +81,15 @@ async fn handle_phone(
     peer: SocketAddr,
     opts: &ControlOptions,
     session: &SessionTx,
+    pairing: &SharedPairing,
     session_id: &mut Option<u32>,
 ) -> anyhow::Result<()> {
     let mut conn = Framed::new(stream, LinesCodec::new_with_max_length(MAX_LINE));
     let mut ping = interval(PING_EVERY);
     let mut last_rx = Instant::now();
-    let mut greeted = false;
+    // (phone_id, phone_name) from the first hello.
+    let mut phone: Option<(String, String)> = None;
+    let mut pair_required_sent = false;
 
     loop {
         let line = tokio::select! {
@@ -97,44 +111,83 @@ async fn handle_phone(
             Ok(msg) => msg,
             Err(e) => return reject(&mut conn, ErrorCode::BadMessage, &e.to_string()).await,
         };
-        let reply = match msg {
-            Message::Hello { .. } if greeted => None,
-            Message::Hello { v, phone_name, .. } => {
-                greeted = true;
+        let reply = match (msg, &phone) {
+            (Message::Hello { .. }, Some(_)) => None,
+            (
+                Message::Hello {
+                    v,
+                    phone_id,
+                    phone_name,
+                },
+                None,
+            ) => {
                 if v != u32::from(airmic_proto::VERSION) {
                     let why = format!("protocol v{v} not supported");
                     return reject(&mut conn, ErrorCode::UnsupportedVersion, &why).await;
                 }
-                let new = Session {
-                    id: rand::random::<u32>().max(1),
-                    phone_addr: peer.ip().to_canonical(),
-                    phone_name,
-                    muted: false,
-                };
-                let id = new.id;
-                let claimed = session.send_if_modified(|s| {
-                    if s.is_some() {
-                        return false;
-                    }
-                    *s = Some(new.clone());
-                    true
-                });
-                if !claimed {
-                    return reject(&mut conn, ErrorCode::Busy, "Another phone is connected").await;
+                let known = pairing.lock().expect("pairing lock").is_known(&phone_id);
+                phone = Some((phone_id, phone_name.clone()));
+                if opts.no_auth {
+                    start_session(&mut conn, peer, &phone_name, opts, session, session_id).await?;
+                    None
+                } else if known {
+                    // A known phone sends `auth` right after `hello`.
+                    None
+                } else {
+                    pair_required_sent = true;
+                    Some(request_pairing(pairing))
                 }
-                *session_id = Some(id);
-                info!(%peer, "session {id:#010x} ready");
-                Some(Message::Ready {
-                    session_id: id,
-                    udp_port: opts.audio_port,
-                    sample_rate: SAMPLE_RATE,
-                })
             }
-            _ if !greeted => {
+            (_, None) => {
                 return reject(&mut conn, ErrorCode::BadMessage, "expected hello").await;
             }
-            Message::Ping => Some(Message::Pong),
-            Message::Mute { on } => match *session_id {
+            (Message::Ping, _) => Some(Message::Pong),
+            (Message::Auth { .. } | Message::Pair { .. }, _)
+                if opts.no_auth || session_id.is_some() =>
+            {
+                None
+            }
+            (Message::Auth { token }, Some((phone_id, phone_name))) => {
+                let valid = pairing
+                    .lock()
+                    .expect("pairing lock")
+                    .is_token_valid(phone_id, &token);
+                if valid {
+                    let name = phone_name.clone();
+                    start_session(&mut conn, peer, &name, opts, session, session_id).await?;
+                    None
+                } else if pair_required_sent {
+                    None
+                } else {
+                    pair_required_sent = true;
+                    Some(request_pairing(pairing))
+                }
+            }
+            (Message::Pair { code }, Some((phone_id, phone_name))) => {
+                let now = Instant::now().into_std();
+                let outcome = pairing
+                    .lock()
+                    .expect("pairing lock")
+                    .pair(&code, phone_id, phone_name, now)?;
+                match outcome {
+                    PairOutcome::Paired { token } => {
+                        let name = phone_name.clone();
+                        let paired = Message::Paired { token };
+                        conn.send(paired.to_line().trim_end()).await?;
+                        start_session(&mut conn, peer, &name, opts, session, session_id).await?;
+                        None
+                    }
+                    PairOutcome::BadCode => Some(Message::Error {
+                        code: ErrorCode::BadCode,
+                        message: "Wrong or expired code".into(),
+                    }),
+                    PairOutcome::Locked => {
+                        let why = "Too many wrong codes; show a new code on the computer";
+                        return reject(&mut conn, ErrorCode::PairLocked, why).await;
+                    }
+                }
+            }
+            (Message::Mute { on }, _) => match *session_id {
                 Some(id) => {
                     session.send_if_modified(|s| match s {
                         Some(s) if s.id == id && s.muted != on => {
@@ -147,7 +200,7 @@ async fn handle_phone(
                 }
                 None => return reject(&mut conn, ErrorCode::BadMessage, "mute before ready").await,
             },
-            Message::Bye => return Ok(()),
+            (Message::Bye, _) => return Ok(()),
             _ => None,
         };
         if let Some(reply) = reply {
@@ -156,11 +209,56 @@ async fn handle_phone(
     }
 }
 
-async fn reject(
-    conn: &mut Framed<TcpStream, LinesCodec>,
-    code: ErrorCode,
-    message: &str,
+/// Returns `pair_required`, first issuing a code if none is valid.
+/// Until the desktop app shows codes (D3.7), the phone's request is what brings one up. A lockout
+/// still needs a deliberate new code, so a guesser cannot reconnect for fresh attempts.
+fn request_pairing(pairing: &SharedPairing) -> Message {
+    let mut pairing = pairing.lock().expect("pairing lock");
+    let now = Instant::now().into_std();
+    if pairing.current_code(now).is_none() && !pairing.is_locked() {
+        pairing.regenerate_code(now);
+    }
+    Message::PairRequired
+}
+
+/// Claims the session for this phone and sends `ready`, or rejects it with `busy`.
+async fn start_session(
+    conn: &mut Conn,
+    peer: SocketAddr,
+    phone_name: &str,
+    opts: &ControlOptions,
+    session: &SessionTx,
+    session_id: &mut Option<u32>,
 ) -> anyhow::Result<()> {
+    let new = Session {
+        id: rand::random::<u32>().max(1),
+        phone_addr: peer.ip().to_canonical(),
+        phone_name: phone_name.to_string(),
+        muted: false,
+    };
+    let id = new.id;
+    let claimed = session.send_if_modified(|s| {
+        if s.is_some() {
+            return false;
+        }
+        *s = Some(new.clone());
+        true
+    });
+    if !claimed {
+        return reject(conn, ErrorCode::Busy, "Another phone is connected").await;
+    }
+    *session_id = Some(id);
+    info!(%peer, "session {id:#010x} ready");
+    let ready = Message::Ready {
+        session_id: id,
+        udp_port: opts.audio_port,
+        sample_rate: SAMPLE_RATE,
+    };
+    conn.send(ready.to_line().trim_end()).await?;
+    Ok(())
+}
+
+async fn reject(conn: &mut Conn, code: ErrorCode, message: &str) -> anyhow::Result<()> {
     let err = Message::Error {
         code,
         message: message.to_string(),
@@ -171,16 +269,27 @@ async fn reject(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
+    use crate::pairing::Pairing;
+    use crate::pairing::tests::temp_store;
 
     type Phone = Framed<TcpStream, LinesCodec>;
 
-    async fn start_daemon() -> (SocketAddr, watch::Receiver<Option<Session>>) {
+    async fn start_daemon(
+        no_auth: bool,
+    ) -> (SocketAddr, watch::Receiver<Option<Session>>, SharedPairing) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (tx, rx) = watch::channel(None);
-        tokio::spawn(serve(listener, ControlOptions { audio_port: 47801 }, tx));
-        (addr, rx)
+        let pairing = Arc::new(Mutex::new(Pairing::load(temp_store()).unwrap()));
+        let opts = ControlOptions {
+            audio_port: 47801,
+            no_auth,
+        };
+        tokio::spawn(serve(listener, opts, tx, pairing.clone()));
+        (addr, rx, pairing)
     }
 
     async fn connect(addr: SocketAddr) -> Phone {
@@ -207,12 +316,17 @@ mod tests {
     async fn open_session(addr: SocketAddr) -> (Phone, u32) {
         let mut phone = connect(addr).await;
         send(&mut phone, HELLO).await;
-        match recv(&mut phone).await {
+        let session_id = expect_ready(recv(&mut phone).await);
+        (phone, session_id)
+    }
+
+    fn expect_ready(msg: Option<Message>) -> u32 {
+        match msg {
             Some(Message::Ready {
                 session_id,
                 udp_port: 47801,
                 sample_rate: 48000,
-            }) => (phone, session_id),
+            }) => session_id,
             other => panic!("expected ready, got {other:?}"),
         }
     }
@@ -224,9 +338,46 @@ mod tests {
         }
     }
 
+    fn pair_line(code: &str) -> String {
+        format!(r#"{{"type":"pair","code":"{code}"}}"#)
+    }
+
+    fn auth_line(token: &str) -> String {
+        format!(r#"{{"type":"auth","token":"{token}"}}"#)
+    }
+
+    fn now() -> std::time::Instant {
+        Instant::now().into_std()
+    }
+
+    /// Connects as a new phone and asserts `pair_required`.
+    async fn connect_unpaired(addr: SocketAddr) -> Phone {
+        let mut phone = connect(addr).await;
+        send(&mut phone, HELLO).await;
+        assert_eq!(recv(&mut phone).await, Some(Message::PairRequired));
+        phone
+    }
+
+    /// Pairs a new phone with the code the daemon issued, up to `ready`. Returns its token.
+    async fn pair_phone(addr: SocketAddr, pairing: &SharedPairing) -> (Phone, String) {
+        let mut phone = connect_unpaired(addr).await;
+        let code = pairing
+            .lock()
+            .unwrap()
+            .current_code(now())
+            .unwrap()
+            .to_string();
+        send(&mut phone, &pair_line(&code)).await;
+        let Some(Message::Paired { token }) = recv(&mut phone).await else {
+            panic!("expected paired");
+        };
+        expect_ready(recv(&mut phone).await);
+        (phone, token)
+    }
+
     #[tokio::test]
     async fn hello_opens_a_session() {
-        let (addr, mut rx) = start_daemon().await;
+        let (addr, mut rx, _) = start_daemon(true).await;
         let (_phone, id) = open_session(addr).await;
         assert_ne!(id, 0);
         let session = rx.wait_for(Option::is_some).await.unwrap().clone().unwrap();
@@ -235,16 +386,16 @@ mod tests {
 
     #[tokio::test]
     async fn ping_gets_pong_and_auth_is_ignored() {
-        let (addr, _rx) = start_daemon().await;
+        let (addr, _rx, _) = start_daemon(true).await;
         let (mut phone, _) = open_session(addr).await;
-        send(&mut phone, r#"{"type":"auth","token":"abc"}"#).await;
+        send(&mut phone, &auth_line("abc")).await;
         send(&mut phone, r#"{"type":"ping"}"#).await;
         assert_eq!(recv(&mut phone).await, Some(Message::Pong));
     }
 
     #[tokio::test]
     async fn second_phone_is_busy() {
-        let (addr, _rx) = start_daemon().await;
+        let (addr, _rx, _) = start_daemon(true).await;
         let (_first, _) = open_session(addr).await;
         let mut second = connect(addr).await;
         send(&mut second, HELLO).await;
@@ -254,7 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrong_version_is_rejected() {
-        let (addr, _rx) = start_daemon().await;
+        let (addr, _rx, _) = start_daemon(true).await;
         let mut phone = connect(addr).await;
         send(&mut phone, &HELLO.replace(r#""v":1"#, r#""v":2"#)).await;
         let code = error_code(recv(&mut phone).await);
@@ -263,7 +414,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_or_early_messages_are_rejected() {
-        let (addr, _rx) = start_daemon().await;
+        let (addr, _rx, _) = start_daemon(true).await;
         for line in ["not json", r#"{"type":"mute","on":true}"#] {
             let mut phone = connect(addr).await;
             send(&mut phone, line).await;
@@ -274,7 +425,7 @@ mod tests {
 
     #[tokio::test]
     async fn mute_and_bye_update_the_session() {
-        let (addr, mut rx) = start_daemon().await;
+        let (addr, mut rx, _) = start_daemon(true).await;
         let (mut phone, _) = open_session(addr).await;
         send(&mut phone, r#"{"type":"mute","on":true}"#).await;
         rx.wait_for(|s| s.as_ref().is_some_and(|s| s.muted))
@@ -288,9 +439,89 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn silent_phone_times_out() {
-        let (addr, mut rx) = start_daemon().await;
+        let (addr, mut rx, _) = start_daemon(true).await;
         let (mut phone, _) = open_session(addr).await;
         assert_eq!(recv(&mut phone).await, None);
         rx.wait_for(Option::is_none).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn new_phone_pairs_then_reconnects_with_its_token() {
+        let (addr, mut rx, pairing) = start_daemon(false).await;
+        let (mut phone, token) = pair_phone(addr, &pairing).await;
+        send(&mut phone, r#"{"type":"bye"}"#).await;
+        rx.wait_for(Option::is_none).await.unwrap();
+
+        let mut phone = connect(addr).await;
+        send(&mut phone, HELLO).await;
+        send(&mut phone, &auth_line(&token)).await;
+        expect_ready(recv(&mut phone).await);
+        send(&mut phone, r#"{"type":"bye"}"#).await;
+        rx.wait_for(Option::is_none).await.unwrap();
+
+        let mut phone = connect(addr).await;
+        send(&mut phone, HELLO).await;
+        send(&mut phone, &auth_line(&"0".repeat(32))).await;
+        assert_eq!(recv(&mut phone).await, Some(Message::PairRequired));
+    }
+
+    #[tokio::test]
+    async fn bad_code_keeps_the_connection_open() {
+        let (addr, _rx, pairing) = start_daemon(false).await;
+        let mut phone = connect_unpaired(addr).await;
+        let code = pairing.lock().unwrap().regenerate_code(now());
+        let wrong = if code == "0000" { "0001" } else { "0000" };
+        send(&mut phone, &pair_line(wrong)).await;
+        assert_eq!(error_code(recv(&mut phone).await), ErrorCode::BadCode);
+        send(&mut phone, &pair_line(&code)).await;
+        assert!(matches!(
+            recv(&mut phone).await,
+            Some(Message::Paired { .. })
+        ));
+        expect_ready(recv(&mut phone).await);
+    }
+
+    #[tokio::test]
+    async fn fifth_wrong_code_locks_pairing() {
+        let (addr, _rx, pairing) = start_daemon(false).await;
+        let mut phone = connect_unpaired(addr).await;
+        let code = pairing.lock().unwrap().regenerate_code(now());
+        let wrong = if code == "0000" { "0001" } else { "0000" };
+        for _ in 0..4 {
+            send(&mut phone, &pair_line(wrong)).await;
+            assert_eq!(error_code(recv(&mut phone).await), ErrorCode::BadCode);
+        }
+        send(&mut phone, &pair_line(wrong)).await;
+        assert_eq!(error_code(recv(&mut phone).await), ErrorCode::PairLocked);
+        assert_eq!(recv(&mut phone).await, None);
+        // Reconnecting does not bring a fresh code.
+        let mut phone = connect_unpaired(addr).await;
+        send(&mut phone, &pair_line(&code)).await;
+        assert_eq!(error_code(recv(&mut phone).await), ErrorCode::PairLocked);
+    }
+
+    #[tokio::test]
+    async fn expired_code_is_a_bad_code() {
+        let (addr, _rx, pairing) = start_daemon(false).await;
+        let mut phone = connect_unpaired(addr).await;
+        let issued = now().checked_sub(Duration::from_secs(121)).unwrap();
+        let code = pairing.lock().unwrap().regenerate_code(issued);
+        send(&mut phone, &pair_line(&code)).await;
+        assert_eq!(error_code(recv(&mut phone).await), ErrorCode::BadCode);
+    }
+
+    #[tokio::test]
+    async fn forgotten_phone_must_pair_again() {
+        let (addr, mut rx, pairing) = start_daemon(false).await;
+        let (mut phone, token) = pair_phone(addr, &pairing).await;
+        send(&mut phone, r#"{"type":"bye"}"#).await;
+        rx.wait_for(Option::is_none).await.unwrap();
+        assert!(pairing.lock().unwrap().forget("p1").unwrap());
+
+        let mut phone = connect_unpaired(addr).await;
+        send(&mut phone, &auth_line(&token)).await;
+        send(&mut phone, r#"{"type":"ping"}"#).await;
+        // The stale token gets no second `pair_required`.
+        assert_eq!(recv(&mut phone).await, Some(Message::Pong));
     }
 }

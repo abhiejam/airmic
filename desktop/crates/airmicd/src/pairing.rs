@@ -1,13 +1,10 @@
 //! Pairing (docs/protocol.md §2.3, §4): the 4 digit code and the paired phones in `paired.json`.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the control channel uses it from the next PR")
-)]
 
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
@@ -16,6 +13,8 @@ use tracing::info;
 
 const CODE_LIFETIME: Duration = Duration::from_secs(120);
 const MAX_ATTEMPTS: u32 = 5;
+
+pub type SharedPairing = Arc<Mutex<Pairing>>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PairedDevice {
