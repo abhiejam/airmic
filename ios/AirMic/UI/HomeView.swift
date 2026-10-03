@@ -8,18 +8,22 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var summary: FocusSession?
 
-    private enum Mode { case live, muted, idle }
+    /// live: rings and bars. muted: grey slashed mic. waiting: grey mic (connecting, reconnecting, paused).
+    private enum Mode { case live, muted, waiting, idle }
 
     private var mode: Mode {
-        guard session.isConnected else { return .idle }
-        return session.isMuted ? .muted : .live
+        switch session.phase {
+        case .idle, .failed: .idle
+        case .live: session.isMuted ? .muted : .live
+        case .connecting, .reconnecting, .paused: session.isMuted ? .muted : .waiting
+        }
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 header
-                StatusPill(dot: statusDot, text: statusText)
+                StatusPill(dot: statusDot, text: statusText, latency: session.phase == .live ? session.latencyMs : nil)
                     .padding(.top, 28)
                 FocusTimer(startedAt: session.startedAt, goalMinutes: session.goalMinutes)
                     .padding(.top, 32)
@@ -101,7 +105,7 @@ struct HomeView: View {
     private var statusDot: Color {
         switch session.phase {
         case .idle, .failed: Theme.muted
-        case .connecting: Theme.accent
+        case .connecting, .reconnecting, .paused: session.isMuted ? Theme.warn : Theme.accent
         case .live: session.isMuted ? Theme.warn : Theme.ok
         }
     }
@@ -111,6 +115,8 @@ struct HomeView: View {
         case .idle: "No computer connected"
         case .failed(let reason): reason
         case .connecting: "Connecting to \(computerName)"
+        case .reconnecting: "Reconnecting to \(computerName)"
+        case .paused: "Paused · \(computerName)"
         case .live: session.isMuted ? "Off air · \(computerName)" : "On air · \(computerName)"
         }
     }
@@ -120,6 +126,12 @@ struct HomeView: View {
         case .idle: "Tap the mic to find your computer"
         case .muted: "Muted · your PC hears silence"
         case .live: "Listening"
+        case .waiting:
+            switch session.phase {
+            case .reconnecting: "Wi-Fi dropped · resumes by itself"
+            case .paused: "Paused by a call or Siri · resumes by itself"
+            default: "Connecting…"
+            }
         }
     }
 
@@ -128,11 +140,17 @@ struct HomeView: View {
     private struct StatusPill: View {
         let dot: Color
         let text: String
+        let latency: Int?
 
         var body: some View {
             HStack(spacing: 8) {
                 Circle().fill(dot).frame(width: 8, height: 8)
                 Text(text).lineLimit(1)
+                if let latency {
+                    Text("\(latency) ms")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.muted)
+                }
             }
             .font(.system(size: 14))
             .padding(.vertical, 8)
@@ -197,12 +215,12 @@ struct HomeView: View {
                         .frame(width: 188, height: 188)
                         .shadow(color: Theme.accentShadow, radius: 24, y: 20)
                         .overlay(micIcon(slashed: false).foregroundStyle(Theme.onAccent))
-                case .muted:
+                case .muted, .waiting:
                     Circle()
                         .fill(Theme.surface)
                         .overlay(Circle().strokeBorder(Theme.line))
                         .frame(width: 188, height: 188)
-                        .overlay(micIcon(slashed: true).foregroundStyle(Theme.muted))
+                        .overlay(micIcon(slashed: mode == .muted).foregroundStyle(Theme.muted))
                 case .idle:
                     Button(action: onConnect) {
                         Circle()

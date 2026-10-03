@@ -22,7 +22,7 @@ final class DebugStreamModel {
     private(set) var status = "Idle"
 
     private let capture = AudioCapture()
-    private var sender: RawUDPSender?
+    private var sender: UDPSender?
 
     init() {
         host = UserDefaults.standard.string(forKey: "debug.host") ?? ""
@@ -46,7 +46,7 @@ final class DebugStreamModel {
         let host = host.trimmingCharacters(in: .whitespaces)
         log.info("Start pressed: host=\(host, privacy: .public) port=\(self.port, privacy: .public)")
         guard let portNumber = UInt16(port), !host.isEmpty,
-              let sender = RawUDPSender(host: host, port: portNumber)
+              let sender = UDPSender(host: host, port: portNumber)
         else {
             status = "Enter an IP address and port"
             return

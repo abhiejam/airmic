@@ -1,4 +1,3 @@
-import Network
 import SwiftUI
 
 struct ConnectView: View {
@@ -145,17 +144,20 @@ struct ManualEntrySheet: View {
     init(initial: Computer?, onConnect: @escaping (Computer) -> Void) {
         self.onConnect = onConnect
         _host = State(initialValue: initial?.host ?? "")
-        _port = State(initialValue: String(initial?.port ?? 5555))
+        _port = State(initialValue: String(initial?.port ?? AirMicProtocol.controlPort))
         _name = State(initialValue: initial?.name ?? "")
     }
 
     static func isValidHost(_ host: String) -> Bool {
-        if IPv4Address(host) != nil { return true }
+        // Only digits and dots: a full dotted quad. (IPv4Address accepts "192.168.20" shorthand.)
+        if host.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }) {
+            let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+            return parts.count == 4 && parts.allSatisfy { !$0.isEmpty && $0.count <= 3 && UInt8($0) != nil }
+        }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-"))
         return !host.isEmpty && host.count <= 253
             && host.rangeOfCharacter(from: allowed.inverted) == nil
             && host.first != "." && host.first != "-"
-            && host.contains(where: \.isLetter) // otherwise it's a malformed IP
     }
 
     private var trimmedHost: String { host.trimmingCharacters(in: .whitespaces) }
