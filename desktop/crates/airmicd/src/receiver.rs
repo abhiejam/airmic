@@ -1,5 +1,7 @@
 //! UDP audio receiver (docs/protocol.md §3): validates packets and feeds the jitter buffer.
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -64,6 +66,57 @@ impl LevelMeter {
     }
 }
 
+/// Writes one CSV row per accepted packet to the file named by `AIRMIC_PACKET_TRACE`, to measure
+/// stalls and clock drift on a real phone stream (tools/analyze-packet-trace.py).
+struct PacketTrace {
+    out: BufWriter<File>,
+    start: Instant,
+    rows: u32,
+}
+
+impl PacketTrace {
+    fn from_env(start: Instant) -> Option<PacketTrace> {
+        let path = std::env::var_os("AIRMIC_PACKET_TRACE")?;
+        let file = File::create(&path)
+            .inspect_err(|e| warn!("packet trace {}: {e}", path.to_string_lossy()))
+            .ok()?;
+        let mut out = BufWriter::new(file);
+        let _ = writeln!(
+            out,
+            "arrival_us,session,sequence,timestamp,muted,buffered_frames,received,lost,dropped,underruns"
+        );
+        info!("tracing packets to {}", path.to_string_lossy());
+        Some(PacketTrace {
+            out,
+            start,
+            rows: 0,
+        })
+    }
+
+    /// Logs a packet and the buffer's counters right after it was pushed.
+    fn record(&mut self, header: &Header, arrival: Instant, jb: &JitterBuffer) {
+        let s = jb.stats();
+        let _ = writeln!(
+            self.out,
+            "{},{},{},{},{},{},{},{},{},{}",
+            arrival.saturating_duration_since(self.start).as_micros(),
+            header.session_id,
+            header.sequence,
+            header.timestamp,
+            u8::from(header.muted),
+            jb.delay_ms() / 10.0,
+            s.received,
+            s.lost,
+            s.dropped,
+            s.underruns,
+        );
+        self.rows += 1;
+        if self.rows.is_multiple_of(100) {
+            let _ = self.out.flush();
+        }
+    }
+}
+
 pub async fn receive(
     socket: UdpSocket,
     session: watch::Receiver<Option<Session>>,
@@ -74,6 +127,7 @@ pub async fn receive(
     let mut meter = LevelMeter::default();
     let mut packet = [0u8; 2048];
     let mut buffer_session = None;
+    let mut trace = PacketTrace::from_env(Instant::now());
     loop {
         let (len, from) = match socket.recv_from(&mut packet).await {
             Ok(received) => received,
@@ -87,7 +141,8 @@ pub async fn receive(
         else {
             continue;
         };
-        *last_packet.lock().expect("last packet lock") = Some(Instant::now());
+        let arrival = Instant::now();
+        *last_packet.lock().expect("last packet lock") = Some(arrival);
         if header.muted {
             meter = LevelMeter::default();
             level.set(0.0, 0.0);
@@ -103,7 +158,10 @@ pub async fn receive(
             *jb = JitterBuffer::new();
             buffer_session = Some(header.session_id);
         }
-        jb.push(&header, payload, Instant::now());
+        jb.push(&header, payload, arrival);
+        if let Some(trace) = &mut trace {
+            trace.record(&header, arrival, &jb);
+        }
     }
 }
 
