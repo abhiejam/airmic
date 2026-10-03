@@ -1,5 +1,8 @@
 import Network
+import os
 import SwiftUI
+
+private let log = Logger(subsystem: "io.airmic.AirMic", category: "debug-stream")
 
 /// M1 spike screen: stream raw PCM to a typed IP and port (the Linux netcat receiver).
 @MainActor
@@ -26,6 +29,10 @@ final class DebugStreamModel {
         port = UserDefaults.standard.string(forKey: "debug.port") ?? "5555"
     }
 
+    var canStart: Bool {
+        !host.trimmingCharacters(in: .whitespaces).isEmpty && UInt16(port) != nil
+    }
+
     var levelDBFS: String {
         guard rms > 0 else { return "-∞ dBFS" }
         return String(format: "%.1f dBFS", 20 * log10(rms))
@@ -36,16 +43,21 @@ final class DebugStreamModel {
     }
 
     func start() async {
+        let host = host.trimmingCharacters(in: .whitespaces)
+        log.info("Start pressed: host=\(host, privacy: .public) port=\(self.port, privacy: .public)")
         guard let portNumber = UInt16(port), !host.isEmpty,
               let sender = RawUDPSender(host: host, port: portNumber)
         else {
             status = "Enter an IP address and port"
             return
         }
+        status = "Asking for microphone access…"
         guard await AudioCapture.requestPermission() else {
+            log.error("Microphone permission denied")
             status = "Microphone permission denied. Allow it in Settings."
             return
         }
+        log.info("Microphone permission granted")
 
         sender.start { [weak self] state in
             Task { @MainActor in self?.status = Self.describe(state) }
@@ -63,10 +75,12 @@ final class DebugStreamModel {
                 }
             }
         } catch {
+            log.error("Audio start failed: \(error, privacy: .public)")
             sender.cancel()
             status = "Audio failed: \(error.localizedDescription)"
             return
         }
+        log.info("Audio started")
         self.sender = sender
         isRunning = true
     }
@@ -115,6 +129,9 @@ struct DebugStreamView: View {
                     }
                     .font(.headline)
                     .frame(maxWidth: .infinity)
+                    .disabled(!model.isRunning && !model.canStart)
+                } footer: {
+                    Text(model.canStart || model.isRunning ? model.status : "Enter the Linux machine's IP address to start.")
                 }
 
                 Section("Live") {
