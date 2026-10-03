@@ -91,6 +91,7 @@ Done when: fresh install → pick computer → enter code → streaming, and nex
   - `StreamSession` (live state) + SwiftData `FocusSession`. Words and last transcript stay nil until S4.
 - [x] **M4.8** Summary screen with Swift Charts weekly bars
 - [ ] **M4.9** Design and build Settings: paired computers, focus goal, audio mode (voice / raw), haptics, about
+  - Built in the mockup style (computer cards with Paired / Connected and a Forget confirmation, goal stepper, Voice / Raw with explanation, haptics, About, Debug stream). Not mocked up first and not yet checked on screen: tick after a look on the phone.
 - [ ] **M4.10** Accessibility pass: Reduce Motion (no pulse), Dynamic Type, VoiceOver, contrast
   - Built: Dynamic Type via `scaledFont` (capped at accessibility2, mic shrinks at accessibility sizes), VoiceOver headers, timer and chart values, card status, announcements, Voice Control names for mute, Increase Contrast variants of secondary text and lines. All theme pairs pass WCAG (lowest 3.97:1 for the status dot, 5.09:1 for text). Checked on the simulator at large and accessibility-XXL. VoiceOver walk-through on the phone pending.
 - [x] **M4.11** App icon and launch screen
@@ -110,7 +111,9 @@ Done when: every mockup screen exists in light and dark and works with real data
 - [x] **M7.3** Unit test coverage for Packetizer, codecs, state machine
   - `ControlClientTests`: 12 tests against an in-process fake server (greeting, ready, pairing, stats, transcripts, ping/pong, own pings, peer timeout, bye, unknown type, bad JSON, refused, close). Timings are injectable. Codecs and packetizer were already covered: 44 tests in all.
 - [ ] **M7.4** Screenshots and screen recording GIF for the README
-- [ ] **M7.5** Sideload install guide in the README (free Apple ID, 7 day re-sign)
+  - A UI-test screenshot pipeline exists but is not committed yet: its first run played speech on the Mac (the simulator uses the Mac mic). Rework it to run silently, then commit.
+- [x] **M7.5** Sideload install guide in the README (free Apple ID, 7 day re-sign)
+  - `docs/ios-install.md`, linked from the README.
 
 ## Later (v2)
 - [ ] **L.1** Live Activity on Lock Screen: timer and mute
