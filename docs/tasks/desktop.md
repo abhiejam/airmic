@@ -107,8 +107,9 @@ Done when: phone discovers the PC, pairs with the code, reconnects with its toke
 ## D5 · Desktop app (Tauri)
 - [x] **D5.1** Scaffold Tauri v2 + React + TS + Vite in `desktop/app`
   - `desktop/app/src-tauri` has its own `[workspace]`, so the daemon's `cargo ... --workspace` CI does not need the webkit libraries. App CI is the `app` job in `desktop.yml`.
-  - Run: `cd desktop/app && npm ci && npm run tauri dev`.
-- [ ] **D5.2** Rust side: IPC client to `airmicd`, events to the web UI
+  - Run: `cd desktop/app && npm ci && npm run tauri dev`. Set `AIRMIC_SOCKET` to talk to a test daemon instead of `$XDG_RUNTIME_DIR/airmic.sock`.
+- [x] **D5.2** Rust side: IPC client to `airmicd`, events to the web UI
+  - `src-tauri/src/ipc_client.rs`: one connection, auto reconnect, subscribes to `status` and `level` itself (add `transcript` with D6.3). The web UI calls any daemon method through the `ipc_call` command (`src/ipc.ts`) and gets the `daemon-connection` and `daemon-notification` events (`src/useDaemon.ts`).
 - [x] **D5.3** Design tokens matching the phone (system sans, cream / dark, indigo accent)
   - `src/theme.css` copies the values in `ios/AirMic/UI/Theme.swift`, including increase-contrast. There are no desktop mockups in the design canvas (phone only), so the desktop screens follow PRD §8.3.
 - [ ] **D5.4** Status screen: phone name, live level meter, latency, loss, "default mic" check + fix button
