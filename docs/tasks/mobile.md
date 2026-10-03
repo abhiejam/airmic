@@ -60,19 +60,22 @@ Done when: phone streams to `airmicd`, mute works, a Wi-Fi toggle reconnects by 
 - [ ] **M3.3** Pairing: `pair_required` → 4 digit code entry → `paired {token}`; error and retry states (needs S3)
 - [ ] **M3.4** Keychain store for tokens; paired computers list; auto-connect to last computer on launch
 - [ ] **M3.5** QR scanner (host, port, id, code) with camera permission handling
-- [ ] **M3.6** Manual IP entry sheet with validation
+- [x] **M3.6** Manual IP entry sheet with validation
+  - `ManualEntrySheet`: IPv4 or hostname, port, optional name.
 
 Done when: fresh install → pick computer → enter code → streaming, and next launch reconnects with no taps.
 
 ## M4 · UI from the mockups
-- [ ] **M4.1** Design tokens: colors (light cream / dark), SF Pro type scale, spacing, radii, 56 px buttons, 280 px primary width
-- [ ] **M4.2** Home · streaming: status pill, focus timer + goal bar, big mic with pulse rings, level bars, "End session", floating mute button
-- [ ] **M4.3** Drive mic rings and level bars from real RMS (smoothed, 30 fps)
-- [ ] **M4.4** Home · muted and Home · no computer states
-- [ ] **M4.5** Mute button: haptic, animation, accessibility label/state
+- [x] **M4.1** Design tokens: colors (light cream / dark), SF Pro type scale, spacing, radii, 56 px buttons, 280 px primary width
+- [x] **M4.2** Home · streaming: status pill, focus timer + goal bar, big mic with pulse rings, level bars, "End session", floating mute button
+- [x] **M4.3** Drive mic rings and level bars from real RMS (smoothed, 30 fps)
+- [x] **M4.4** Home · muted and Home · no computer states
+- [x] **M4.5** Mute button: haptic, animation, accessibility label/state
 - [ ] **M4.6** Connect screen (nearby list, inline code, other ways, desktop app link)
-- [ ] **M4.7** `SessionStore` + SwiftData model: start/end, goal, mutes, dropouts, words
-- [ ] **M4.8** Summary screen with Swift Charts weekly bars
+  - Built; "Nearby" shows only the recent computer until Discovery (S3). QR button disabled until M3.5.
+- [x] **M4.7** `SessionStore` + SwiftData model: start/end, goal, mutes, dropouts, words
+  - `StreamSession` (live state) + SwiftData `FocusSession`. Words and last transcript stay nil until S4.
+- [x] **M4.8** Summary screen with Swift Charts weekly bars
 - [ ] **M4.9** Design and build Settings: paired computers, focus goal, audio mode (voice / raw), haptics, about
 - [ ] **M4.10** Accessibility pass: Reduce Motion (no pulse), Dynamic Type, VoiceOver, contrast
 - [ ] **M4.11** App icon and launch screen
