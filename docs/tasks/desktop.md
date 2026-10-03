@@ -37,8 +37,8 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [ ] **D1.3** Verify with `pw-record --target airmic` and Claude Code `/voice`; note PipeWire quantum and latency in `docs/notes/m1.md`
 
 ## D2 · Protocol crate and daemon core
-- [ ] **D2.1** `airmic-proto`: header struct, encode/decode, control message enums (serde, newline JSON)
-- [ ] **D2.2** Tests against `vectors.json`
+- [x] **D2.1** `airmic-proto`: header struct, encode/decode, control message enums (serde, newline JSON)
+- [x] **D2.2** Tests against `vectors.json`
 - [ ] **D2.3** `airmic-send` CLI: stream a sine tone or WAV with the real protocol; flags for loss %, jitter ms, reorder
 - [ ] **D2.4** `airmicd` skeleton: tokio, `config.toml` (`directories` crate for paths), tracing to journald
 - [ ] **D2.5** UDP receiver on 47801: validate magic, version, session id
