@@ -89,6 +89,7 @@ fn accept_packet<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use airmic_proto::FRAME_SAMPLES;
 
     const PHONE: &str = "192.168.1.20:5000";
 
@@ -137,6 +138,26 @@ mod tests {
         let p = packet(7, true, 0, 0);
         let accepted = accept_packet(&p, PHONE.parse().unwrap(), Some(&session()));
         assert!(accepted.is_some_and(|(h, p)| h.muted && p.is_empty()));
+    }
+
+    #[test]
+    fn muted_packets_play_silence_whatever_their_payload() {
+        let (mut jb, t, s) = (JitterBuffer::new(), Instant::now(), session());
+        let mut feed = |seq: u32, muted: bool, payload_len: usize| {
+            let mut p = packet(7, muted, 0, payload_len);
+            p[8..12].copy_from_slice(&seq.to_be_bytes());
+            let (header, payload) = accept_packet(&p, PHONE.parse().unwrap(), Some(&s)).unwrap();
+            let arrival = t + Duration::from_millis(u64::from(seq) * 10);
+            jb.push(&header, payload, arrival);
+            let mut out = [0; FRAME_SAMPLES];
+            jb.read(&mut out);
+            out[FRAME_SAMPLES / 2]
+        };
+        // Payload bytes are all 1, so each unmuted sample is 0x0101 once the buffer has primed.
+        let unmuted: Vec<i16> = (0..6).map(|seq| feed(seq, false, FRAME_BYTES)).collect();
+        assert_eq!(unmuted[4..], [0x0101, 0x0101]);
+        assert_eq!(feed(6, true, 0), 0, "header-only muted packet");
+        assert_eq!(feed(7, true, FRAME_BYTES), 0, "muted packet with audio");
     }
 
     #[test]
