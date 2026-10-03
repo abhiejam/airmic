@@ -23,7 +23,7 @@ Owner: desktop track. The daemon side is D3.7, the app side D5.2.
 type Status = {
   state: "idle" | "streaming" | "muted";   // idle = no phone session
   phone: { id: string; name: string; addr: string } | null;
-  stats: { loss_pct: number; jitter_ms: number; latency_ms: number } | null; // null when idle
+  stats: { loss_pct: number; jitter_ms: number; latency_ms: number } | null; // the phone's last 2 s `stats`; null when idle or before the first window
   audio_flowing: boolean;   // a UDP packet arrived in the last 2 s
   is_default_source: boolean;
   version: string;          // daemon version
