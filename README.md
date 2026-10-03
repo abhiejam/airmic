@@ -17,6 +17,10 @@ Status: early development. See [docs/PRD.md](docs/PRD.md) for the plan.
 | `docs/protocol.md` | Wire protocol between phone and computer |
 | `tools/` | Development scripts |
 
+## iPhone app
+
+Install it on your own iPhone with a free Apple ID: [docs/ios-install.md](docs/ios-install.md).
+
 ## Build (desktop)
 
 ```sh
