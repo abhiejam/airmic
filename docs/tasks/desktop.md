@@ -61,9 +61,10 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 
 ## D3 · Control, discovery, pairing
 - [x] **D3.1** Control server TCP 47800: `hello`, `ready`, `ping/pong`, `mute`, `bye`, with `--no-auth` flag → **S2**
-  - Until D3.3 lands, `airmicd` refuses to start without `--no-auth`.
+  - `--no-auth` skips pairing (development only).
 - [ ] **D3.2** Periodic `stats` to the phone every 2 s
-- [ ] **D3.3** Pairing: 4 digit code (2 min, 5 attempts), 128 bit tokens, `~/.config/airmic/paired.json` → **S3**
+- [x] **D3.3** Pairing: 4 digit code (2 min, 5 attempts), 128 bit tokens, `~/.config/airmic/paired.json` → **S3**
+  - Until D3.7, a `pair_required` issues a code and the daemon logs it. After a lockout only a new code from IPC (or a daemon restart) unlocks. A code pairs one phone, then is retired.
 - [x] **D3.4** mDNS advert `_airmic._tcp` with TXT `id`, `name`, `v` (`mdns-sd` crate) → **S3**
   - Computer id is a UUID v4 kept in `~/.config/airmic/device_id`; instance name is the hostname.
 - [x] **D3.5** One active phone at a time; new phone gets a clear "busy" error
