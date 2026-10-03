@@ -1,0 +1,69 @@
+{
+  "protocol_version": 1,
+  "notes": "Header fields are big endian. PCM samples are little endian. Compare JSON messages as parsed values, not strings.",
+  "headers": [
+    {
+      "name": "first packet",
+      "fields": { "muted": false, "codec": 0, "session_id": 439041101, "sequence": 0, "timestamp": 0 },
+      "hex": "414d01001a2b3c4d0000000000000000"
+    },
+    {
+      "name": "second packet",
+      "fields": { "muted": false, "codec": 0, "session_id": 439041101, "sequence": 1, "timestamp": 480 },
+      "hex": "414d01001a2b3c4d00000001000001e0"
+    },
+    {
+      "name": "muted header-only packet",
+      "fields": { "muted": true, "codec": 0, "session_id": 439041101, "sequence": 250, "timestamp": 120000 },
+      "hex": "414d01011a2b3c4d000000fa0001d4c0"
+    },
+    {
+      "name": "sequence and timestamp at wrap",
+      "fields": { "muted": false, "codec": 0, "session_id": 439041101, "sequence": 4294967295, "timestamp": 4294966816 },
+      "hex": "414d01001a2b3c4dfffffffffffffe20"
+    },
+    {
+      "name": "packet after wrap",
+      "fields": { "muted": false, "codec": 0, "session_id": 439041101, "sequence": 0, "timestamp": 0 },
+      "hex": "414d01001a2b3c4d0000000000000000"
+    },
+    {
+      "name": "reserved bits set are ignored",
+      "decode_only": true,
+      "fields": { "muted": false, "codec": 0, "session_id": 439041101, "sequence": 7, "timestamp": 3360 },
+      "hex": "414d01f01a2b3c4d0000000700000d20"
+    }
+  ],
+  "invalid_headers": [
+    { "name": "bad magic", "hex": "584d01001a2b3c4d0000000000000000", "error": "bad_magic" },
+    { "name": "unknown version", "hex": "414d02001a2b3c4d0000000000000000", "error": "bad_version" },
+    { "name": "too short", "hex": "414d01001a2b3c4d00000000000000", "error": "too_short" }
+  ],
+  "unsupported_codec": [
+    { "name": "codec 1 (Opus, later)", "hex": "414d01021a2b3c4d0000000000000000", "codec": 1 }
+  ],
+  "pcm_payload": {
+    "notes": "Int16 little endian. These 5 samples encode to these 10 bytes.",
+    "samples": [0, 1, -1, 32767, -32768],
+    "hex": "00000100ffffff7f0080"
+  },
+  "messages": [
+    { "type": "hello", "json": "{\"type\":\"hello\",\"v\":1,\"phone_id\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\",\"phone_name\":\"Abhishek's iPhone\"}" },
+    { "type": "pair_required", "json": "{\"type\":\"pair_required\"}" },
+    { "type": "pair", "json": "{\"type\":\"pair\",\"code\":\"0427\"}" },
+    { "type": "paired", "json": "{\"type\":\"paired\",\"token\":\"9f86d081884c7d659a2feaa0c55ad015\"}" },
+    { "type": "auth", "json": "{\"type\":\"auth\",\"token\":\"9f86d081884c7d659a2feaa0c55ad015\"}" },
+    { "type": "ready", "json": "{\"type\":\"ready\",\"session_id\":439041101,\"udp_port\":47801,\"sample_rate\":48000}" },
+    { "type": "mute", "json": "{\"type\":\"mute\",\"on\":true}" },
+    { "type": "stats", "json": "{\"type\":\"stats\",\"loss_pct\":0.5,\"jitter_ms\":3.2,\"latency_ms\":48.0}" },
+    { "type": "transcript", "json": "{\"type\":\"transcript\",\"text\":\"refactor the jitter buffer\",\"final\":true}" },
+    { "type": "ping", "json": "{\"type\":\"ping\"}" },
+    { "type": "pong", "json": "{\"type\":\"pong\"}" },
+    { "type": "bye", "json": "{\"type\":\"bye\"}" },
+    { "type": "error", "json": "{\"type\":\"error\",\"code\":\"busy\",\"message\":\"Another phone is connected\"}" }
+  ],
+  "messages_tolerated": [
+    { "name": "unknown field is ignored", "json": "{\"type\":\"mute\",\"on\":false,\"future\":1}", "parses_as": "{\"type\":\"mute\",\"on\":false}" },
+    { "name": "unknown type is ignored", "json": "{\"type\":\"future_thing\",\"x\":1}", "parses_as": null }
+  ]
+}

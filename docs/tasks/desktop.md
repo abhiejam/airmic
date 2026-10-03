@@ -24,7 +24,8 @@ Do S1 and S2 first: they are what lets both tracks run in parallel.
   - `.github/workflows/desktop.yml`, runs only on `desktop/**` changes.
 - [x] **D0.3** Root `README.md`, `LICENSE` (MIT), `.gitignore`
   - `.gitignore` already existed and covered everything; left unchanged.
-- [ ] **D0.4** Write `docs/protocol.md` from PRD §6 and `docs/protocol/vectors.json` (header bytes and JSON messages with expected encodings); review with mobile → **S1**
+- [x] **D0.4** Write `docs/protocol.md` from PRD §6 and `docs/protocol/vectors.json` (header bytes and JSON messages with expected encodings); review with mobile → **S1**
+  - Added an `error {code, message}` message (needed for D3.5 "busy"); also in PRD §6.
 
 Done when: CI green on an empty workspace, protocol doc agreed.
 
