@@ -19,13 +19,14 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::control::{Session, StreamStats};
-use crate::receiver::LastPacket;
-use crate::sink::{DefaultSource, Level};
+use crate::receiver::{LastPacket, Level};
+use crate::sink::DefaultSource;
 
 const MAX_LINE: usize = 64 * 1024;
 const POLL_EVERY: Duration = Duration::from_secs(1);
 const STATUS_EVERY: Duration = Duration::from_secs(2);
 const LEVEL_EVERY: Duration = Duration::from_millis(50);
+const LEVEL_STALE_AFTER: Duration = Duration::from_millis(200);
 const FLOWING_WITHIN: Duration = Duration::from_secs(2);
 
 const PARSE_ERROR: i64 = -32700;
@@ -377,7 +378,10 @@ async fn publish_level(ipc: Arc<Ipc>) {
     loop {
         tick.tick().await;
         if ipc.session.borrow().as_ref().is_some_and(|s| !s.muted) {
-            let (rms, peak) = ipc.level.get();
+            // Packets stopped (Wi-Fi drop): show silence instead of freezing the meter.
+            let last_packet = *ipc.last_packet.lock().expect("last packet lock");
+            let fresh = last_packet.is_some_and(|t| t.elapsed() < LEVEL_STALE_AFTER);
+            let (rms, peak) = if fresh { ipc.level.get() } else { (0.0, 0.0) };
             ipc.notify(Topic::Level, json!({"rms": rms, "peak": peak}));
         }
     }
@@ -644,7 +648,18 @@ mod tests {
         daemon.start_session(false);
         let level = recv(&mut app).await;
         assert_eq!(level["method"], "level");
-        assert_eq!(level["params"], json!({"rms": 0.25, "peak": 0.5}));
+        assert_eq!(
+            level["params"],
+            json!({"rms": 0.0, "peak": 0.0}),
+            "no packets yet"
+        );
+        *daemon.last_packet.lock().unwrap() = Some(std::time::Instant::now());
+        loop {
+            let level = recv(&mut app).await;
+            if level["params"] == json!({"rms": 0.25, "peak": 0.5}) {
+                break;
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
