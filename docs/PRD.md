@@ -15,7 +15,7 @@ A desktop window shows connection status, pairing and a live transcript.
 Later, the same pipeline powers system-wide dictation into any text box.
 
 It is an open source personal tool and portfolio piece, not a business.
-It replaces Micstream, whose free tier caps streaming at 1 hour, shows 2 minute ads, and whose UI is disliked.
+Existing mic-streaming apps cap free streaming at 1 hour, show 2 minute ads, and have a disliked UI.
 
 ## 2. Goals and non-goals
 
@@ -214,7 +214,7 @@ Visual system: SF Pro (system font), cream `#F6F2EA` light / `#111114` dark, acc
 - **JitterBuffer:** reorders by sequence, target delay 40 ms (adaptive 20 to 120 ms), fills lost frames with silence (simple fade), reports loss and jitter.
 - **Audio output abstraction:** the jitter buffer writes to an `AudioSink` trait, never to PipeWire directly. v1 ships the PipeWire backend; other platforms add backends (section 10). Same rule for IPC (`Unix socket` behind a trait, named pipe on Windows) and service install (systemd / launchd / Windows startup).
 - **PipeWire output:** `pipewire` crate (pipewire-rs). Creates a node with `media.class = Audio/Source/Virtual`, `node.name = airmic`, `node.description = AirMic`. When no phone is connected it outputs silence, so apps never lose the device.
-- **Default device:** on start, sets AirMic as the default source by name (PipeWire metadata `default.configured.audio.source`), configurable. Avoids the changing node id problem seen with Micstream.
+- **Default device:** on start, sets AirMic as the default source by name (PipeWire metadata `default.configured.audio.source`), configurable. Node ids change across restarts, so the name is the stable key.
 - **mDNS:** advertises via Avahi (`zeroconf` or `mdns-sd` crate).
 - **IPC:** Unix socket `$XDG_RUNTIME_DIR/airmic.sock`, JSON-RPC: `status`, `level` stream, `pairing_code`, `paired_devices`, `forget_device`, `transcript` stream, `settings`.
 - **Config:** `~/.config/airmic/config.toml` (ports, default device, transcription on/off, model).
