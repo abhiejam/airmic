@@ -19,9 +19,11 @@ Do S1 and S2 first: they are what lets both tracks run in parallel.
 ---
 
 ## D0 · Setup
-- [ ] **D0.1** Cargo workspace `desktop/` with crates `airmic-proto`, `airmicd`, `airmic-send`
-- [ ] **D0.2** GitHub Actions: `cargo fmt --check`, `clippy -D warnings`, `cargo test`; Xcode build job later
-- [ ] **D0.3** Root `README.md`, `LICENSE` (MIT), `.gitignore`
+- [x] **D0.1** Cargo workspace `desktop/` with crates `airmic-proto`, `airmicd`, `airmic-send`
+- [x] **D0.2** GitHub Actions: `cargo fmt --check`, `clippy -D warnings`, `cargo test`; Xcode build job later
+  - `.github/workflows/desktop.yml`, runs only on `desktop/**` changes.
+- [x] **D0.3** Root `README.md`, `LICENSE` (MIT), `.gitignore`
+  - `.gitignore` already existed and covered everything; left unchanged.
 - [ ] **D0.4** Write `docs/protocol.md` from PRD §6 and `docs/protocol/vectors.json` (header bytes and JSON messages with expected encodings); review with mobile → **S1**
 
 Done when: CI green on an empty workspace, protocol doc agreed.
