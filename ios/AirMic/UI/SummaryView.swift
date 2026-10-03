@@ -17,11 +17,12 @@ struct SummaryView: View {
             }
 
             Text(SessionFormat.focusTitle(seconds: focus.duration))
-                .font(.system(size: 28, weight: .semibold))
+                .scaledFont(28, weight: .semibold, relativeTo: .title)
+                .accessibilityAddTraits(.isHeader)
                 .tracking(-0.6)
                 .padding(.top, 20)
             Text("Streamed to \(focus.computerName) · \(timeRange)")
-                .font(.system(size: 15))
+                .scaledFont(15, relativeTo: .subheadline)
                 .foregroundStyle(Theme.muted)
                 .padding(.top, 8)
 
@@ -37,10 +38,10 @@ struct SummaryView: View {
             if let transcript = focus.lastTranscript {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Last thing you said")
-                        .font(.system(size: 11)).tracking(1.1).textCase(.uppercase)
+                        .scaledFont(11, relativeTo: .caption2).tracking(1.1).textCase(.uppercase)
                         .foregroundStyle(Theme.muted)
                     Text("“\(transcript)”")
-                        .font(.system(size: 16))
+                        .scaledFont(16, relativeTo: .body)
                         .lineSpacing(4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,6 +62,8 @@ struct SummaryView: View {
         .foregroundStyle(Theme.ink)
     }
 
+    private static let dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
     private var timeRange: String {
         let style = Date.FormatStyle(date: .omitted, time: .shortened)
         return "\(focus.start.formatted(style)) – \(focus.end.formatted(style))"
@@ -69,10 +72,10 @@ struct SummaryView: View {
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.system(size: 22, weight: .semibold))
+                .scaledFont(22, weight: .semibold, relativeTo: .title2)
                 .tracking(-0.4)
             Text(label)
-                .font(.system(size: 12))
+                .scaledFont(12, relativeTo: .footnote)
                 .foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -91,10 +94,10 @@ struct SummaryView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("This week").font(.system(size: 14, weight: .semibold))
+                Text("This week").scaledFont(14, weight: .semibold, relativeTo: .subheadline)
                 Spacer()
                 Text("\(SessionFormat.hoursMinutes(total)) focused")
-                    .font(.system(size: 13, design: .monospaced))
+                    .scaledFont(13, design: .monospaced, relativeTo: .footnote)
                     .foregroundStyle(Theme.muted)
             }
             Chart(minutes.indices, id: \.self) { day in
@@ -105,6 +108,8 @@ struct SummaryView: View {
                     width: 22)
                     .cornerRadius(6)
                     .foregroundStyle(day == today ? Theme.accent : (minutes[day] > 0 ? Theme.accentBar : Theme.line))
+                    .accessibilityLabel(Self.dayNames[day] + (day == today ? ", today" : ""))
+                    .accessibilityValue("\(Int(minutes[day].rounded())) minutes")
             }
             .chartYAxis(.hidden)
             .chartXScale(domain: -0.5...6.5)
@@ -113,14 +118,13 @@ struct SummaryView: View {
                     AxisValueLabel(centered: false) {
                         if let day = value.as(Int.self) {
                             Text(labels[day])
-                                .font(.system(size: 11))
+                                .scaledFont(11, relativeTo: .caption2)
                                 .foregroundStyle(day == today ? Theme.ink : Theme.muted)
                         }
                     }
                 }
             }
             .frame(height: 92)
-            .accessibilityLabel("Minutes focused each day this week")
         }
         .padding(16)
         .card()

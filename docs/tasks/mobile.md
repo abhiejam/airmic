@@ -92,7 +92,9 @@ Done when: fresh install → pick computer → enter code → streaming, and nex
 - [x] **M4.8** Summary screen with Swift Charts weekly bars
 - [ ] **M4.9** Design and build Settings: paired computers, focus goal, audio mode (voice / raw), haptics, about
 - [ ] **M4.10** Accessibility pass: Reduce Motion (no pulse), Dynamic Type, VoiceOver, contrast
-- [ ] **M4.11** App icon and launch screen
+  - Built: Dynamic Type via `scaledFont` (capped at accessibility2, mic shrinks at accessibility sizes), VoiceOver headers, timer and chart values, card status, announcements, Voice Control names for mute, Increase Contrast variants of secondary text and lines. All theme pairs pass WCAG (lowest 3.97:1 for the status dot, 5.09:1 for text). Checked on the simulator at large and accessibility-XXL. VoiceOver walk-through on the phone pending.
+- [x] **M4.11** App icon and launch screen
+  - Rendered from `design/logo/airmic-app-icon.svg` with light, dark and tinted variants. Launch screen: Signal mark on cream / near-black (`LaunchBackground`, `LaunchMark`).
 
 Done when: every mockup screen exists in light and dark and works with real data.
 

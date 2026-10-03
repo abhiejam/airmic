@@ -32,8 +32,10 @@ struct HomeView: View {
                     MicHero(mode: mode, level: session.levels.last ?? 0) { showConnect = true }
                     LevelBars(levels: session.levels, active: mode == .live)
                     Text(caption)
-                        .font(.system(size: 14))
+                        .scaledFont(14, relativeTo: .subheadline)
                         .foregroundStyle(Theme.muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxHeight: .infinity)
 
@@ -46,6 +48,11 @@ struct HomeView: View {
             .foregroundStyle(Theme.ink)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showConnect) { ConnectView() }
+            .onChange(of: session.phase) { _, phase in
+                if let announcement = Self.announcement(for: phase, muted: session.isMuted) {
+                    AccessibilityNotification.Announcement(announcement).post()
+                }
+            }
             .onChange(of: session.isPairing) { _, pairing in
                 // E.g. auto-connect at launch hit a computer that forgot this phone.
                 if pairing { showConnect = true }
@@ -67,7 +74,7 @@ struct HomeView: View {
             HStack(spacing: 6) {
                 AirMicLogo(size: 28)
                 Text("AirMic")
-                    .font(.system(size: 20, weight: .semibold))
+                    .scaledFont(20, weight: .semibold, relativeTo: .title2)
                     .tracking(-0.6)
             }
             .accessibilityElement(children: .combine)
@@ -85,9 +92,9 @@ struct HomeView: View {
             HStack {
                 Button(action: endSession) {
                     Label("End session", systemImage: "stop")
-                        .font(.system(size: 15, weight: .medium))
+                        .scaledFont(15, weight: .medium, relativeTo: .subheadline)
                         .padding(.horizontal, 20)
-                        .frame(height: 48)
+                        .frame(minHeight: 48)
                         .background(Theme.surface, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.line))
                 }
@@ -105,6 +112,16 @@ struct HomeView: View {
     }
 
     private var computerName: String { session.computer?.name ?? "computer" }
+
+    private static func announcement(for phase: StreamSession.Phase, muted: Bool) -> String? {
+        switch phase {
+        case .live: muted ? "Connected, muted" : "On air"
+        case .reconnecting: "Wi-Fi dropped. Reconnecting"
+        case .paused: "Paused by a call or Siri"
+        case .failed(let reason): reason
+        default: nil
+        }
+    }
 
     private var statusDot: Color {
         switch session.phase {
@@ -150,14 +167,15 @@ struct HomeView: View {
         var body: some View {
             HStack(spacing: 8) {
                 Circle().fill(dot).frame(width: 8, height: 8)
-                Text(text).lineLimit(1)
+                Text(text).lineLimit(2)
                 if let latency {
                     Text("\(latency) ms")
-                        .font(.system(size: 12, design: .monospaced))
+                        .accessibilityLabel("latency \(latency) milliseconds")
+                        .scaledFont(12, design: .monospaced, relativeTo: .footnote)
                         .foregroundStyle(Theme.muted)
                 }
             }
-            .font(.system(size: 14))
+            .scaledFont(14, relativeTo: .subheadline)
             .padding(.vertical, 8)
             .padding(.horizontal, 14)
             .background(Theme.surface, in: Capsule())
@@ -178,9 +196,11 @@ struct HomeView: View {
                     Text(startedAt == nil ? "Ready when you are" : "Focus session")
                         .sectionLabelStyle()
                     Text(SessionFormat.timer(elapsed))
-                        .font(.system(size: 72, weight: .light))
+                        .scaledFont(72, weight: .light, relativeTo: .largeTitle)
                         .tracking(-2)
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                     Capsule()
                         .fill(Theme.line)
                         .frame(width: 140, height: 4)
@@ -191,11 +211,16 @@ struct HomeView: View {
                     Text(startedAt == nil
                          ? "Goal \(goalMinutes) min"
                          : SessionFormat.goalText(elapsedSeconds: elapsed, goalMinutes: goalMinutes))
-                        .font(.system(size: 13))
+                        .scaledFont(13, relativeTo: .footnote)
                         .foregroundStyle(Theme.muted)
                         .padding(.top, 4)
                 }
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(startedAt == nil ? "Focus session not started" : "Focus session")
+                .accessibilityValue(startedAt == nil
+                    ? "Goal \(goalMinutes) minutes"
+                    : "\(Duration.seconds(elapsed).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide))). "
+                      + SessionFormat.goalText(elapsedSeconds: elapsed, goalMinutes: goalMinutes).replacingOccurrences(of: "min", with: "minutes"))
             }
         }
     }
@@ -205,6 +230,7 @@ struct HomeView: View {
         let level: Float
         let onConnect: () -> Void
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             ZStack {
@@ -239,7 +265,9 @@ struct HomeView: View {
                 }
             }
             .frame(width: 272, height: 272)
-            .animation(.easeOut(duration: 0.12), value: level)
+            .scaleEffect(typeSize.isAccessibilitySize ? 0.7 : 1)
+            .frame(width: typeSize.isAccessibilitySize ? 190 : 272, height: typeSize.isAccessibilitySize ? 190 : 272)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: level)
             .accessibilityHidden(mode != .idle)
         }
 
@@ -308,6 +336,7 @@ struct HomeView: View {
             .sensoryFeedback(.impact(weight: .medium), trigger: muted) { _, _ in haptics }
             .accessibilityLabel(muted ? "Unmute" : "Mute")
             .accessibilityValue(muted ? "Muted" : "On air")
+            .accessibilityInputLabels(muted ? ["Unmute", "Microphone"] : ["Mute", "Microphone"])
         }
     }
 }

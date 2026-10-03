@@ -6,8 +6,9 @@ enum Theme {
     static let bg = Color(light: 0xF6F2EA, dark: 0x111114)
     static let surface = Color(light: 0xFFFDF8, dark: 0x1B1B20)
     static let ink = Color(light: 0x1B1A22, dark: 0xF3F0E8)
-    static let muted = Color(light: 0x66646E, dark: 0xA3A1AB)
-    static let line = Color(light: 0xE6E0D3, dark: 0x2C2C33)
+    /// Increase Contrast: secondary text and lines get stronger.
+    static let muted = Color(light: 0x66646E, dark: 0xA3A1AB, highContrastLight: 0x48464F, highContrastDark: 0xC9C7D0)
+    static let line = Color(light: 0xE6E0D3, dark: 0x2C2C33, highContrastLight: 0xA9A293, highContrastDark: 0x5A5A66)
     /// Dark accent is the light accent mixed 30% toward white.
     static let accent = Color(light: 0x5146E5, dark: 0x857EED)
     static let onAccent = Color(light: 0xFFFFFF, dark: 0x111114)
@@ -26,12 +27,42 @@ enum Theme {
 }
 
 extension Color {
-    init(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) {
+    init(
+        light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1,
+        highContrastLight: UInt32? = nil, highContrastDark: UInt32? = nil
+    ) {
         self.init(uiColor: UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(hex: dark, alpha: darkAlpha)
-                : UIColor(hex: light, alpha: lightAlpha)
+            let high = traits.accessibilityContrast == .high
+            return traits.userInterfaceStyle == .dark
+                ? UIColor(hex: high ? highContrastDark ?? dark : dark, alpha: darkAlpha)
+                : UIColor(hex: high ? highContrastLight ?? light : light, alpha: lightAlpha)
         })
+    }
+}
+
+extension View {
+    /// SF Pro at the mockup's point size, scaled with Dynamic Type like `style`.
+    func scaledFont(
+        _ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default,
+        relativeTo style: Font.TextStyle = .body
+    ) -> some View {
+        modifier(ScaledFont(size: size, weight: weight, design: design, style: style))
+    }
+}
+
+private struct ScaledFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    private let design: Font.Design
+
+    init(size: CGFloat, weight: Font.Weight, design: Font.Design, style: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+        self.design = design
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight, design: design))
     }
 }
 
@@ -48,7 +79,7 @@ extension UIColor {
 extension View {
     /// Small uppercase section label ("NEARBY", "FOCUS SESSION").
     func sectionLabelStyle() -> some View {
-        font(.system(size: 12)).tracking(1.2).textCase(.uppercase).foregroundStyle(Theme.muted)
+        scaledFont(12, relativeTo: .caption).tracking(1.2).textCase(.uppercase).foregroundStyle(Theme.muted)
     }
 }
 
@@ -80,8 +111,12 @@ struct PrimaryButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: Theme.primaryWidth, height: Theme.buttonHeight)
+                .scaledFont(16, weight: .medium, relativeTo: .body)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 16)
+                .frame(width: Theme.primaryWidth)
+                .frame(minHeight: Theme.buttonHeight)
                 .background(Theme.accent, in: Capsule())
                 .foregroundStyle(Theme.onAccent)
         }

@@ -19,6 +19,7 @@ struct QRScannerView: View {
                         onScan(link)
                     } else {
                         unrecognized = true
+                        AccessibilityNotification.Announcement("That isn't an AirMic code").post()
                     }
                 }
                 .ignoresSafeArea()
@@ -31,9 +32,9 @@ struct QRScannerView: View {
             default:
                 VStack(spacing: 14) {
                     Text("Camera access is off")
-                        .font(.system(size: 20, weight: .semibold))
+                        .scaledFont(20, weight: .semibold, relativeTo: .title2)
                     Text("Turn on the camera for AirMic in Settings to scan the code, or enter the IP address instead.")
-                        .font(.system(size: 15))
+                        .scaledFont(15, relativeTo: .subheadline)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white.opacity(0.7))
                     PrimaryButton(title: "Open Settings") {
@@ -51,7 +52,7 @@ struct QRScannerView: View {
                 }
                 Spacer()
                 Text(unrecognized ? "That isn't an AirMic code" : "Point at the QR code in the AirMic desktop app")
-                    .font(.system(size: 15, weight: .medium))
+                    .scaledFont(15, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)

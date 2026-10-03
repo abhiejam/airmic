@@ -10,6 +10,8 @@ struct AirMicApp: App {
             HomeView()
                 .environment(session)
                 .tint(Theme.accent)
+                // Screens are laid out for one phone screen; past this, controls would leave it.
+                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 .task { await session.autoConnect() }
                 // airmic://pair?... from the Camera app or another QR reader.
                 .onOpenURL { url in
