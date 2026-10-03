@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Testing
 @testable import AirMic
 
@@ -208,6 +209,18 @@ struct PacketizerTests {
         #expect(!resumed.muted)
         #expect(resumed.sequence == 11)
         #expect(resumed.timestamp == 480 * 101)
+    }
+}
+
+struct AddressTests {
+    @Test func dottedQuadHasNoScope() throws {
+        let address = try #require(IPv4Address("192.168.20.42"))
+        #expect(StreamSession.dottedQuad(address) == "192.168.20.42")
+    }
+
+    @Test func stripsSavedScope() {
+        #expect(StreamSession.withoutScope("192.168.20.42%en0") == "192.168.20.42")
+        #expect(StreamSession.withoutScope("192.168.20.42") == "192.168.20.42")
     }
 }
 

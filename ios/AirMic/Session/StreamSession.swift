@@ -107,7 +107,12 @@ final class StreamSession {
         hapticsEnabled = defaults.object(forKey: Keys.haptics) as? Bool ?? true
         if let data = defaults.data(forKey: Keys.known),
            let computers = try? JSONDecoder().decode([Computer].self, from: data) {
-            knownComputers = computers
+            // Earlier builds saved the interface scope too ("192.168.20.42%en0").
+            knownComputers = computers.map { computer in
+                var computer = computer
+                computer.host = computer.host.map(Self.withoutScope)
+                return computer
+            }
         }
         if let id = defaults.string(forKey: Keys.phoneID) {
             phoneID = id
@@ -214,6 +219,15 @@ final class StreamSession {
         return min(1, max(0, (db + 55) / 45))
     }
 
+    /// "192.168.20.42", without the "%en0" interface scope that `IPv4Address`'s description adds.
+    nonisolated static func dottedQuad(_ address: IPv4Address) -> String {
+        address.rawValue.map(String.init).joined(separator: ".")
+    }
+
+    nonisolated static func withoutScope(_ host: String) -> String {
+        host.split(separator: "%", maxSplits: 1).first.map(String.init) ?? host
+    }
+
     /// Delay before reconnect attempt `n` (0 based): 0.25, 0.5, 1, 2, 2, … seconds.
     /// Capped at 2 s so audio is back within 3 s of the Wi-Fi returning.
     nonisolated static func reconnectDelay(attempt: Int) -> Duration {
@@ -263,7 +277,7 @@ final class StreamSession {
             pipe.attach(sender: sender, sessionID: sessionID)
             reconnectAttempt = 0
             // Keep a routable address for display and fallback, not a 169.254 link-local one.
-            if case let .ipv4(address) = host, !address.isLinkLocal { computer.host = "\(address)" }
+            if case let .ipv4(address) = host, !address.isLinkLocal { computer.host = Self.dottedQuad(address) }
             self.computer = computer
             remember(computer)
             if isMuted { source.send(.mute(on: true)) }
