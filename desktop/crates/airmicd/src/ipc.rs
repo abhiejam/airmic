@@ -19,11 +19,14 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::control::Session;
-use crate::sink::{DefaultSource, SharedBuffer};
+use crate::receiver::LastPacket;
+use crate::sink::{DefaultSource, Level, SharedBuffer};
 
 const MAX_LINE: usize = 64 * 1024;
 const POLL_EVERY: Duration = Duration::from_secs(1);
 const STATUS_EVERY: Duration = Duration::from_secs(2);
+const LEVEL_EVERY: Duration = Duration::from_millis(50);
+const FLOWING_WITHIN: Duration = Duration::from_secs(2);
 
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
@@ -160,6 +163,8 @@ struct SubscribeParams {
 pub struct Ipc {
     session: watch::Receiver<Option<Session>>,
     buffer: SharedBuffer,
+    level: Arc<Level>,
+    last_packet: LastPacket,
     default_source: Box<dyn DefaultSource>,
     config_path: PathBuf,
     config: Mutex<Config>,
@@ -172,6 +177,8 @@ impl Ipc {
     pub fn new(
         session: watch::Receiver<Option<Session>>,
         buffer: SharedBuffer,
+        level: Arc<Level>,
+        last_packet: LastPacket,
         default_source: Box<dyn DefaultSource>,
         config_path: PathBuf,
         config: Config,
@@ -179,6 +186,8 @@ impl Ipc {
         let ipc = Arc::new(Ipc {
             session,
             buffer,
+            level,
+            last_packet,
             default_source,
             config_path,
             config: Mutex::new(config),
@@ -191,8 +200,11 @@ impl Ipc {
     }
 
     fn build_status(&self, is_default_source: bool) -> Status {
+        let last_packet = *self.last_packet.lock().expect("last packet lock");
+        let audio_flowing = last_packet.is_some_and(|t| t.elapsed() < FLOWING_WITHIN);
         let Some(session) = self.session.borrow().clone() else {
             return Status {
+                audio_flowing,
                 is_default_source,
                 ..idle_status()
             };
@@ -224,7 +236,7 @@ impl Ipc {
                 addr: session.phone_addr.to_string(),
             }),
             stats: Some(stats),
-            audio_flowing: false,
+            audio_flowing,
             is_default_source,
             version: env!("CARGO_PKG_VERSION"),
         }
@@ -340,6 +352,7 @@ fn merge_json(base: &mut Value, changes: Value) {
 /// Accepts app connections until the listener fails.
 pub async fn serve<L: IpcListener>(mut listener: L, ipc: Arc<Ipc>) {
     tokio::spawn(publish_status(ipc.clone()));
+    tokio::spawn(publish_level(ipc.clone()));
     loop {
         match listener.accept().await {
             Ok(stream) => {
@@ -378,6 +391,18 @@ async fn publish_status(ipc: Arc<Ipc>) {
         if changed || (new.stats.is_some() && last_sent.elapsed() >= STATUS_EVERY) {
             last_sent = Instant::now();
             ipc.notify(Topic::Status, new);
+        }
+    }
+}
+
+/// Sends the `level` notification every 50 ms while a phone streams unmuted.
+async fn publish_level(ipc: Arc<Ipc>) {
+    let mut tick = interval(LEVEL_EVERY);
+    loop {
+        tick.tick().await;
+        if ipc.session.borrow().as_ref().is_some_and(|s| !s.muted) {
+            let (rms, peak) = ipc.level.get();
+            ipc.notify(Topic::Level, json!({"rms": rms, "peak": peak}));
         }
     }
 }
@@ -438,21 +463,31 @@ mod tests {
     struct Daemon {
         dir: tempfile::TempDir,
         session: watch::Sender<Option<Session>>,
+        level: Arc<Level>,
+        last_packet: LastPacket,
     }
 
     async fn start_daemon() -> Daemon {
         let dir = tempfile::tempdir().unwrap();
         let listener = UnixSocket::bind(&dir.path().join("airmic.sock")).unwrap();
         let (session, session_rx) = watch::channel(None);
+        let (level, last_packet) = (Arc::new(Level::default()), LastPacket::default());
         let ipc = Ipc::new(
             session_rx,
             Arc::new(Mutex::new(JitterBuffer::new())),
+            level.clone(),
+            last_packet.clone(),
             Box::new(FakeDefault(Arc::default())),
             dir.path().join("config/config.toml"),
             Config::default(),
         );
         tokio::spawn(serve(listener, ipc));
-        Daemon { dir, session }
+        Daemon {
+            dir,
+            session,
+            level,
+            last_packet,
+        }
     }
 
     impl Daemon {
@@ -605,6 +640,22 @@ mod tests {
         assert_eq!(status["phone"]["name"], "iPhone");
         assert_eq!(status["phone"]["addr"], "192.168.1.20");
         assert_eq!(status["stats"]["loss_pct"], 0.0);
+        assert_eq!(status["audio_flowing"], false);
+
+        *daemon.last_packet.lock().unwrap() = Some(std::time::Instant::now());
+        recv_status(&mut app, |s| s["audio_flowing"] == true).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn level_is_sent_while_streaming() {
+        let daemon = start_daemon().await;
+        let mut app = daemon.connect().await;
+        call(&mut app, "subscribe", json!({"topics": ["level"]})).await;
+        daemon.level.set(0.25, 0.5);
+        daemon.start_session(false);
+        let level = recv(&mut app).await;
+        assert_eq!(level["method"], "level");
+        assert_eq!(level["params"], json!({"rms": 0.25, "peak": 0.5}));
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -1,6 +1,7 @@
 //! UDP audio receiver (docs/protocol.md §3): validates packets and feeds the jitter buffer.
 
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use airmic_proto::{FRAME_BYTES, HEADER_LEN, Header};
@@ -12,10 +13,14 @@ use crate::control::Session;
 use crate::jitter::JitterBuffer;
 use crate::sink::SharedBuffer;
 
+/// When the receiver last accepted a packet from the active phone.
+pub type LastPacket = Arc<Mutex<Option<Instant>>>;
+
 pub async fn receive(
     socket: UdpSocket,
     session: watch::Receiver<Option<Session>>,
     buffer: SharedBuffer,
+    last_packet: LastPacket,
 ) {
     let mut packet = [0u8; 2048];
     let mut buffer_session = None;
@@ -32,6 +37,7 @@ pub async fn receive(
         else {
             continue;
         };
+        *last_packet.lock().expect("last packet lock") = Some(Instant::now());
         let mut jb = buffer.lock().expect("jitter buffer lock");
         if buffer_session != Some(header.session_id) {
             *jb = JitterBuffer::new();
@@ -193,5 +199,32 @@ mod tests {
             !accepts(&packet(7, false, 0, FRAME_BYTES)[..10], PHONE, s.as_ref()),
             "truncated header"
         );
+    }
+
+    #[tokio::test]
+    async fn accepted_packet_records_its_time() {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let phone_addr = "127.0.0.1".parse().unwrap();
+        let (_session, rx) = watch::channel(Some(Session {
+            phone_addr,
+            ..session()
+        }));
+        let last_packet = LastPacket::default();
+        let buffer = Arc::new(Mutex::new(JitterBuffer::new()));
+        tokio::spawn(receive(socket, rx, buffer, last_packet.clone()));
+
+        let phone = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        phone
+            .send_to(&packet(7, false, 0, FRAME_BYTES), addr)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while last_packet.lock().unwrap().is_none() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("packet never recorded");
     }
 }
