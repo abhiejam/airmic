@@ -20,11 +20,12 @@ struct ConnectView: View {
             }
 
             Text("Connect to a computer")
-                .font(.system(size: 28, weight: .semibold))
+                .scaledFont(28, weight: .semibold, relativeTo: .title)
                 .tracking(-0.6)
                 .padding(.top, 28)
+                .accessibilityAddTraits(.isHeader)
             Text("Open AirMic on your computer. Both devices need to be on the same Wi-Fi.")
-                .font(.system(size: 15))
+                .scaledFont(15, relativeTo: .subheadline)
                 .lineSpacing(3)
                 .foregroundStyle(Theme.muted)
                 .padding(.top, 10)
@@ -34,7 +35,7 @@ struct ConnectView: View {
                     nearbyHeader
                     nearbyContent
                     Text("Computer not listed? Get the AirMic desktop app.")
-                        .font(.system(size: 13))
+                        .scaledFont(13, relativeTo: .footnote)
                         .foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 2)
@@ -93,7 +94,7 @@ struct ConnectView: View {
                     Circle().fill(Theme.accent).frame(width: 6, height: 6)
                     Text("Searching")
                 }
-                .font(.system(size: 13))
+                .scaledFont(13, relativeTo: .footnote)
                 .foregroundStyle(Theme.muted)
             }
         }
@@ -120,7 +121,7 @@ struct ConnectView: View {
             }
         } else if rows.isEmpty {
             Text("Computers running the AirMic desktop app will show up here.")
-                .font(.system(size: 14))
+                .scaledFont(14, relativeTo: .subheadline)
                 .foregroundStyle(Theme.muted)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
@@ -183,14 +184,14 @@ struct ConnectView: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                Text(title).font(.system(size: 16, weight: .semibold))
+                Text(title).scaledFont(16, weight: .semibold, relativeTo: .body)
                 Text(message)
-                    .font(.system(size: 14))
+                    .scaledFont(14, relativeTo: .subheadline)
                     .lineSpacing(2)
                     .foregroundStyle(Theme.muted)
                 Button(action: action) {
                     Text(button)
-                        .font(.system(size: 15, weight: .medium))
+                        .scaledFont(15, weight: .medium, relativeTo: .subheadline)
                         .padding(.horizontal, 20)
                         .frame(height: 44)
                         .background(Theme.accent, in: Capsule())
@@ -214,7 +215,7 @@ struct ConnectView: View {
         var body: some View {
             Button(action: action) {
                 Label(title, systemImage: systemImage)
-                    .font(.system(size: 15, weight: .medium))
+                    .scaledFont(15, weight: .medium, relativeTo: .subheadline)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
@@ -254,10 +255,10 @@ private struct ComputerCard: View {
                         .background(isSelected ? Theme.accentSoft : Theme.bg, in: RoundedRectangle(cornerRadius: 14))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(computer.name)
-                            .font(.system(size: 16, weight: .semibold))
+                            .scaledFont(16, weight: .semibold, relativeTo: .body)
                             .lineLimit(1)
                         Text(subtitle)
-                            .font(.system(size: 12, design: .monospaced))
+                            .scaledFont(12, design: .monospaced, relativeTo: .footnote)
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
                     }
@@ -268,6 +269,8 @@ private struct ComputerCard: View {
             }
             .buttonStyle(.plain)
             .disabled(status == .connecting || isPairing)
+            .accessibilityValue(accessibilityStatus)
+            .accessibilityHint(status == .idle || isFailed ? "Connects to this computer" : "")
 
             if isPairing || isFailed {
                 Rectangle().fill(Theme.line).frame(height: 1)
@@ -290,6 +293,15 @@ private struct ComputerCard: View {
     private var isFailed: Bool {
         if case .failed = status { return true }
         return false
+    }
+
+    private var accessibilityStatus: String {
+        switch status {
+        case .idle: ""
+        case .connecting, .pairing(.checking): "Connecting"
+        case .pairing: "Needs the pairing code"
+        case .failed(let message): message
+        }
     }
 
     @ViewBuilder
@@ -316,13 +328,13 @@ private struct ComputerCard: View {
                 Text(step == .wrongCode
                      ? "That code didn't match. Check the code on \(computer.name)."
                      : "Enter the code shown on \(computer.name)")
-                    .font(.system(size: 14))
+                    .scaledFont(14, relativeTo: .subheadline)
                     .foregroundStyle(step == .wrongCode ? Theme.warn : Theme.muted)
                 PairingCodeField(isChecking: step == .checking, resetTrigger: step == .wrongCode, onComplete: onCode)
             }
         case .failed(let message):
             Text(message)
-                .font(.system(size: 14))
+                .scaledFont(14, relativeTo: .subheadline)
                 .foregroundStyle(Theme.warn)
         default:
             EmptyView()
@@ -378,6 +390,7 @@ private struct PairingCodeField: View {
             if wrong {
                 code = ""
                 focused = true
+                AccessibilityNotification.Announcement("That code didn't match. Try again.").post()
             }
         }
     }
@@ -417,7 +430,8 @@ struct ManualEntrySheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Enter IP address")
-                .font(.system(size: 22, weight: .semibold))
+                .scaledFont(22, weight: .semibold, relativeTo: .title2)
+                .accessibilityAddTraits(.isHeader)
             VStack(spacing: 10) {
                 field("IP address, e.g. 192.168.1.42", text: $host, keyboard: .numbersAndPunctuation)
                     .focused($hostFocused)
@@ -429,7 +443,7 @@ struct ManualEntrySheet: View {
             }
             if !trimmedHost.isEmpty && !Self.isValidHost(trimmedHost) {
                 Text("That doesn't look like an IP address.")
-                    .font(.system(size: 13))
+                    .scaledFont(13, relativeTo: .footnote)
                     .foregroundStyle(Theme.warn)
             }
             Spacer(minLength: 0)
@@ -453,9 +467,9 @@ struct ManualEntrySheet: View {
             .keyboardType(keyboard)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
-            .font(.system(size: 17))
+            .scaledFont(17, relativeTo: .body)
             .padding(.horizontal, 16)
-            .frame(height: 52)
+            .frame(minHeight: 52)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line))
     }
