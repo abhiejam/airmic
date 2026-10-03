@@ -1,0 +1,10 @@
+.DS_Store
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+# Rust
+target/
+# Node / Tauri
+node_modules/
+dist/
