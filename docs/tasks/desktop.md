@@ -53,7 +53,9 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [ ] **D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)
   - Not needed so far: pipewire-rs 0.10 works on PipeWire 1.0.5.
 - [ ] **D2.11** Set AirMic as default source by name on start (configurable)
+  - Implemented via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Not yet run live: it changes the system default mic.
 - [ ] **D2.12** systemd user unit `packaging/airmicd.service`, start on login
+  - `packaging/airmicd.service` written (`/usr/bin/airmicd`, restart on failure). Not yet installed; it cannot start without `--no-auth` until D3.3.
 
 Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, and it survives a reboot.
 

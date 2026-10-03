@@ -1,0 +1,14 @@
+[Unit]
+Description=AirMic daemon: iPhone as a wireless microphone
+Documentation=https://github.com/abhiejam/airmic
+# The daemon creates a PipeWire node, so it needs the user's PipeWire running.
+After=pipewire.service wireplumber.service
+Wants=pipewire.service
+
+[Service]
+ExecStart=/usr/bin/airmicd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

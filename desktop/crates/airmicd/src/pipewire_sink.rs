@@ -7,13 +7,15 @@ use pw::properties::properties;
 use pw::spa;
 use spa::param::audio::{AudioFormat, AudioInfoRaw, MAX_CHANNELS};
 use spa::pod::{Object, Pod, Value, serialize::PodSerializer};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::sink::{AudioSink, SharedBuffer};
 
 pub const NODE_NAME: &str = "airmic";
 
-pub struct PipeWireSink;
+pub struct PipeWireSink {
+    pub set_default_source: bool,
+}
 
 impl AudioSink for PipeWireSink {
     fn run(self: Box<Self>, buffer: SharedBuffer) -> anyhow::Result<()> {
@@ -97,8 +99,32 @@ impl AudioSink for PipeWireSink {
             &mut params,
         )?;
         info!("PipeWire source \"{NODE_NAME}\" created");
+        if self.set_default_source {
+            set_default_source();
+        }
 
         mainloop.run();
         anyhow::bail!("PipeWire main loop stopped")
+    }
+}
+
+/// Makes AirMic the default input by node name, which survives node id changes across restarts.
+fn set_default_source() {
+    let value = format!(r#"{{ "name": "{NODE_NAME}" }}"#);
+    let result = std::process::Command::new("pw-metadata")
+        .args([
+            "0",
+            "default.configured.audio.source",
+            &value,
+            "Spa:String:JSON",
+        ])
+        .output();
+    match result {
+        Ok(out) if out.status.success() => info!("AirMic set as the default microphone"),
+        Ok(out) => warn!(
+            "pw-metadata failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ),
+        Err(e) => warn!("could not run pw-metadata: {e}"),
     }
 }

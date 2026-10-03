@@ -69,7 +69,9 @@ async fn main() -> anyhow::Result<()> {
     info!("audio channel on UDP {}", config.audio_port);
 
     let buffer = Arc::new(Mutex::new(JitterBuffer::new()));
-    let sink: Box<dyn AudioSink> = Box::new(PipeWireSink);
+    let sink: Box<dyn AudioSink> = Box::new(PipeWireSink {
+        set_default_source: config.set_default_source,
+    });
     let (sink_failed_tx, sink_failed) = oneshot::channel();
     let sink_buffer = buffer.clone();
     std::thread::spawn(move || {
