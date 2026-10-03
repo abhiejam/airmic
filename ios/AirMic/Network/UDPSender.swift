@@ -1,8 +1,8 @@
 import Foundation
 import Network
 
-/// Sends datagrams to a fixed host and port. M1 spike: raw PCM, no header.
-final class RawUDPSender: Sendable {
+/// Sends datagrams to a fixed host and port.
+final class UDPSender: Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "io.airmic.udp")
 
@@ -13,7 +13,7 @@ final class RawUDPSender: Sendable {
         connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: parameters)
     }
 
-    func start(onStateChange: @escaping @Sendable (NWConnection.State) -> Void) {
+    func start(onStateChange: (@Sendable (NWConnection.State) -> Void)? = nil) {
         connection.stateUpdateHandler = onStateChange
         connection.start(queue: queue)
     }

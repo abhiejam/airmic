@@ -42,15 +42,23 @@ Done when: blank app installs on the iPhone from Xcode.
 Done when: you can talk into the phone with the screen locked and use it as the Linux mic.
 
 ## M2 · Protocol client
-- [ ] **M2.1** `Protocol.swift`: 16 byte header encode/decode, control message `Codable` types (needs S1)
+- [x] **M2.1** `Protocol.swift`: 16 byte header encode/decode, control message `Codable` types (needs S1)
+  - `Network/Protocol.swift`: `AudioHeader`, `ControlMessage`, `LineBuffer`, `Packetizer`.
 - [ ] **M2.2** Unit tests against `docs/protocol/vectors.json` (same vectors the Rust side uses)
-- [ ] **M2.3** `Packetizer`: sequence, timestamp, session id, muted flag; `AudioSender` uses it
-- [ ] **M2.4** `ControlClient`: TCP `NWConnection`, newline JSON framing, `hello` → `ready`, `ping/pong` keepalive (2 s, 6 s timeout), `bye` (needs S2 for real testing)
-- [ ] **M2.5** `tools/mock_control.py`: tiny fake control server for testing before S2
+  - `AirMicTests/ProtocolTests.swift` reads `docs/protocol/vectors.json` from the repo (no copy). Tick when the simulator run passes.
+- [x] **M2.3** `Packetizer`: sequence, timestamp, session id, muted flag; `AudioSender` uses it
+- [x] **M2.4** `ControlClient`: TCP `NWConnection`, newline JSON framing, `hello` → `ready`, `ping/pong` keepalive (2 s, 6 s timeout), `bye` (needs S2 for real testing)
+  - 2026-10-03: hello → ready → audio → bye verified on iPhone against `tools/mock_control.py`.
+- [x] **M2.5** `tools/mock_control.py`: tiny fake control server for testing before S2
+  - Also advertises nothing yet; `--pair CODE`, `--wav FILE`, `--drop-after SECONDS`.
 - [ ] **M2.6** Connection state machine: idle → connecting → live → muted → reconnecting; exponential backoff, resume within 3 s after Wi-Fi blip
+  - Built (`StreamSession`: backoff 0.25/0.5/1/2 s, capped at 2 s). Wi-Fi toggle test on the phone pending.
 - [ ] **M2.7** Mute: send `mute {on}` and header-only packets at 10/s while muted
+  - Built. Phone test pending.
 - [ ] **M2.8** Handle `stats` (latency for the status pill)
+  - Built: latency in the status pill. Phone test pending.
 - [ ] **M2.9** Audio interruptions (call, Siri) and route changes (AirPods): pause, show reason, auto-resume
+  - Built in `AudioCapture` (interruption, engine configuration change, media reset). Phone test pending.
 
 Done when: phone streams to `airmicd`, mute works, a Wi-Fi toggle reconnects by itself.
 

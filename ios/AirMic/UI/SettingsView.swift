@@ -31,7 +31,7 @@ struct SettingsView: View {
                 }
                 Section("Developer") {
                     NavigationLink("Debug stream") { DebugStreamView() }
-                        .disabled(session.isConnected)
+                        .disabled(session.isActive)
                 }
                 Section {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")

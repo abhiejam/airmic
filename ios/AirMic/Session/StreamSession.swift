@@ -1,7 +1,7 @@
 import Foundation
-import Network
 import Observation
 import Synchronization
+import UIKit
 
 struct Computer: Codable, Equatable, Sendable {
     var name: String
@@ -9,10 +9,10 @@ struct Computer: Codable, Equatable, Sendable {
     var port: UInt16
 }
 
-/// The live focus session: mic capture, streaming, mute and the numbers the home screen shows.
+/// The live focus session: control channel, mic capture, audio packets, mute and the numbers
+/// the home screen shows.
 ///
-/// Streams raw PCM over UDP for now (M1 spike receiver). The control channel and
-/// packet header replace this in M2.
+/// idle → connecting → live ⇄ reconnecting (Wi-Fi blip) / paused (call, Siri) → idle.
 @MainActor
 @Observable
 final class StreamSession {
@@ -20,6 +20,8 @@ final class StreamSession {
         case idle
         case connecting
         case live
+        case reconnecting
+        case paused
         case failed(String)
     }
 
@@ -32,6 +34,8 @@ final class StreamSession {
     private(set) var startedAt: Date?
     private(set) var muteCount = 0
     private(set) var dropouts = 0
+    /// From the computer's `stats`, every 2 s while audio flows.
+    private(set) var latencyMs: Int?
     /// Recent mic levels, 0...1, oldest first; drives the level bars.
     private(set) var levels = [Float](repeating: 0, count: levelHistoryCount)
 
@@ -47,81 +51,74 @@ final class StreamSession {
 
     private let defaults = UserDefaults.standard
     private let capture = AudioCapture()
-    private var sender: RawUDPSender?
-    private let gate = MuteGate()
+    private let pipe = AudioPipe()
+    private var client: ControlClient?
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectAttempt = 0
+    private var interrupted = false
+    private let phoneID: String
 
     private enum Keys {
         static let goal = "focus.goalMinutes"
         static let voiceProcessing = "audio.voiceProcessing"
         static let haptics = "ui.haptics"
         static let recent = "computer.recent"
+        static let phoneID = "phone.id"
     }
 
     init() {
         goalMinutes = defaults.object(forKey: Keys.goal) as? Int ?? 50
         voiceProcessing = defaults.object(forKey: Keys.voiceProcessing) as? Bool ?? true
         hapticsEnabled = defaults.object(forKey: Keys.haptics) as? Bool ?? true
-        if let data = defaults.data(forKey: Keys.recent) {
-            recentComputer = try? JSONDecoder().decode(Computer.self, from: data)
+        if let data = defaults.data(forKey: Keys.recent),
+           var computer = try? JSONDecoder().decode(Computer.self, from: data) {
+            // M1 spike builds saved the netcat port.
+            if computer.port == 5555 { computer.port = AirMicProtocol.controlPort }
+            recentComputer = computer
+        }
+        if let id = defaults.string(forKey: Keys.phoneID) {
+            phoneID = id
+        } else {
+            phoneID = UUID().uuidString.lowercased()
+            defaults.set(phoneID, forKey: Keys.phoneID)
         }
     }
 
-    var isConnected: Bool { phase == .connecting || phase == .live }
+    /// A session is under way (the timer runs and End session shows).
+    var isActive: Bool {
+        switch phase {
+        case .connecting, .live, .reconnecting, .paused: true
+        case .idle, .failed: false
+        }
+    }
 
     func connect(to computer: Computer) async {
-        if isConnected { stopStreaming() }
-        guard let sender = RawUDPSender(host: computer.host, port: computer.port) else {
-            phase = .failed("That address doesn't look right")
-            return
-        }
+        if isActive { teardown() }
         guard await AudioCapture.requestPermission() else {
             phase = .failed("Microphone access is off. Turn it on in Settings.")
             return
         }
-
         self.computer = computer
         remember(computer)
-        phase = .connecting
-        isMuted = false
-        gate.set(muted: false)
-
-        sender.start { [weak self] state in
-            Task { @MainActor in self?.handle(state) }
-        }
-        let gate = gate
-        do {
-            capture.voiceProcessing = voiceProcessing
-            try capture.start { [weak self] frame in
-                let muted = gate.isMuted
-                if !muted { sender.send(frame.pcm) }
-                // UI at about 30 fps.
-                if frame.index % 3 == 0 {
-                    let level = muted ? 0 : Self.normalizedLevel(rms: frame.rms)
-                    Task { @MainActor in self?.push(level: level) }
-                }
-            }
-        } catch {
-            sender.cancel()
-            phase = .failed("Couldn't start the microphone")
-            return
-        }
-        self.sender = sender
-        startedAt = .now
         muteCount = 0
         dropouts = 0
+        reconnectAttempt = 0
+        phase = .connecting
+        openControl()
     }
 
     func toggleMute() {
-        guard isConnected else { return }
+        guard isActive else { return }
         isMuted.toggle()
-        gate.set(muted: isMuted)
+        pipe.setMuted(isMuted)
+        if phase == .live || phase == .paused { client?.send(.mute(on: isMuted)) }
         if isMuted {
             muteCount += 1
             levels = Self.silentLevels
         }
     }
 
-    /// Stops streaming and returns the finished session, or nil if nothing was streamed.
+    /// Ends the session and returns it, or nil if audio never started.
     func end() -> FocusSession? {
         let finished: FocusSession? = if let startedAt, let computer {
             FocusSession(
@@ -130,7 +127,7 @@ final class StreamSession {
         } else {
             nil
         }
-        stopStreaming()
+        teardown()
         phase = .idle
         return finished
     }
@@ -147,38 +144,163 @@ final class StreamSession {
         return min(1, max(0, (db + 55) / 45))
     }
 
+    /// Delay before reconnect attempt `n` (0 based): 0.25, 0.5, 1, 2, 2, … seconds.
+    /// Capped at 2 s so audio is back within 3 s of the Wi-Fi returning.
+    nonisolated static func reconnectDelay(attempt: Int) -> Duration {
+        .milliseconds(min(2_000, 250 << min(attempt, 4)))
+    }
+
+    // MARK: - Control channel
+
+    private func openControl() {
+        guard let computer,
+              let client = ControlClient(
+                host: computer.host, port: computer.port,
+                hello: .hello(v: AirMicProtocol.version, phoneID: phoneID, phoneName: UIDevice.current.name),
+                token: nil)
+        else {
+            fail("That address doesn't look right")
+            return
+        }
+        self.client = client
+        Task { [weak self] in
+            for await event in client.events {
+                self?.handle(event, from: client)
+            }
+        }
+        client.start()
+    }
+
+    private func handle(_ event: ControlClient.Event, from source: ControlClient) {
+        guard source === client, let computer else { return }
+        switch event {
+        case let .ready(sessionID, udpPort, sampleRate):
+            guard sampleRate == AirMicProtocol.sampleRate else {
+                fail("\(computer.name) asked for \(sampleRate) Hz audio; AirMic sends 48000 Hz")
+                return
+            }
+            guard let sender = UDPSender(host: computer.host, port: udpPort) else {
+                fail("\(computer.name) sent a bad audio port")
+                return
+            }
+            sender.start()
+            pipe.attach(sender: sender, sessionID: sessionID)
+            reconnectAttempt = 0
+            if isMuted { source.send(.mute(on: true)) }
+            if startedAt == nil {
+                do {
+                    try startCapture()
+                } catch {
+                    fail("Couldn't start the microphone")
+                    return
+                }
+                startedAt = .now
+            }
+            phase = interrupted ? .paused : .live
+        case let .stats(_, _, latency):
+            latencyMs = Int(latency.rounded())
+        case .pairRequired:
+            fail("\(computer.name) asks for a pairing code. Pairing is coming; for now run airmicd --no-auth.")
+        case .paired, .transcript:
+            break // M3.3, M6.1
+        case let .error(code, message):
+            switch code {
+            case "busy": fail("\(computer.name) is in use by another phone")
+            case "unsupported_version": fail("\(computer.name) runs a different AirMic version")
+            default: fail(message.isEmpty ? "Error from \(computer.name): \(code)" : message)
+            }
+        case let .closed(reason):
+            connectionLost(reason: reason)
+        }
+    }
+
+    private func connectionLost(reason: String?) {
+        client = nil
+        pipe.detach()
+        latencyMs = nil
+        guard let computer, startedAt != nil else {
+            // Never got going: the computer isn't there.
+            teardown()
+            phase = .failed("Couldn't reach \(computer?.name ?? "the computer"). Is AirMic running on it?")
+            return
+        }
+        guard reason != nil else {
+            // The computer said bye.
+            teardown()
+            phase = .failed("\(computer.name) ended the session")
+            return
+        }
+        if phase == .live || phase == .paused { dropouts += 1 }
+        phase = .reconnecting
+        let delay = Self.reconnectDelay(attempt: reconnectAttempt)
+        reconnectAttempt += 1
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.phase == .reconnecting else { return }
+            self.openControl()
+        }
+    }
+
+    private func fail(_ message: String) {
+        teardown()
+        phase = .failed(message)
+    }
+
+    /// Stops everything; the caller sets the next phase.
+    private func teardown() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        client?.close()
+        client = nil
+        pipe.detach()
+        capture.stop()
+        startedAt = nil
+        isMuted = false
+        interrupted = false
+        pipe.setMuted(false)
+        latencyMs = nil
+        levels = Self.silentLevels
+    }
+
+    // MARK: - Audio
+
+    private func startCapture() throws {
+        capture.voiceProcessing = voiceProcessing
+        capture.onInterruption = { [weak self] interruption in
+            self?.handleInterruption(interruption)
+        }
+        let pipe = pipe
+        try capture.start { [weak self] frame in
+            let muted = pipe.process(frame)
+            // UI at about 30 fps.
+            if frame.index % 3 == 0 {
+                let level = muted ? 0 : Self.normalizedLevel(rms: frame.rms)
+                Task { @MainActor in self?.push(level: level) }
+            }
+        }
+    }
+
+    private func handleInterruption(_ interruption: AudioCapture.Interruption) {
+        switch interruption {
+        case .began:
+            interrupted = true
+            levels = Self.silentLevels
+            if phase == .live { phase = .paused }
+        case .ended:
+            interrupted = false
+            if phase == .paused { phase = .live }
+        }
+    }
+
     private static let silentLevels = [Float](repeating: 0, count: levelHistoryCount)
 
     private func push(level: Float) {
-        guard isConnected, !isMuted else { return }
+        guard phase == .live, !isMuted else { return }
         // Fast attack, slower release, so speech doesn't flicker.
         let previous = levels.last ?? 0
         let smoothed = level >= previous ? level : previous * 0.6 + level * 0.4
         levels.removeFirst()
         levels.append(smoothed)
-    }
-
-    private func handle(_ state: NWConnection.State) {
-        switch state {
-        case .ready:
-            if phase == .connecting { phase = .live }
-        case .failed(let error):
-            if phase == .live { dropouts += 1 }
-            stopStreaming()
-            phase = .failed("Lost \(computer?.name ?? "the computer"): \(error.localizedDescription)")
-        default:
-            break
-        }
-    }
-
-    private func stopStreaming() {
-        capture.stop()
-        sender?.cancel()
-        sender = nil
-        startedAt = nil
-        isMuted = false
-        gate.set(muted: false)
-        levels = Self.silentLevels
     }
 
     private func remember(_ computer: Computer) {
@@ -189,13 +311,49 @@ final class StreamSession {
     }
 }
 
-/// Mute state readable from the audio processor thread.
-private final class MuteGate: Sendable {
-    private let muted = Atomic<Bool>(false)
+/// Hands captured frames to the current session's packetizer and UDP sender.
+/// Shared between the main actor (attach, detach, mute) and the frame processor thread.
+private final class AudioPipe: Sendable {
+    private struct Route {
+        let sender: UDPSender
+        var packetizer: Packetizer
+    }
 
-    var isMuted: Bool { muted.load(ordering: .relaxed) }
+    private struct State {
+        var route: Route?
+        var muted = false
+    }
 
-    func set(muted value: Bool) {
-        muted.store(value, ordering: .relaxed)
+    private let state = Mutex(State())
+
+    func attach(sender: UDPSender, sessionID: UInt32) {
+        state.withLock { state in
+            state.route?.sender.cancel()
+            state.route = Route(sender: sender, packetizer: Packetizer(sessionID: sessionID))
+        }
+    }
+
+    func detach() {
+        state.withLock { state in
+            state.route?.sender.cancel()
+            state.route = nil
+        }
+    }
+
+    func setMuted(_ muted: Bool) {
+        state.withLock { $0.muted = muted }
+    }
+
+    /// Sends the frame (or a muted header) if a session is attached. Returns whether muted.
+    func process(_ frame: AudioFrame) -> Bool {
+        state.withLock { state in
+            if var route = state.route {
+                if let packet = route.packetizer.packet(pcm: frame.pcm, muted: state.muted) {
+                    route.sender.send(packet)
+                }
+                state.route = route
+            }
+            return state.muted
+        }
     }
 }
