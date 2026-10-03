@@ -30,8 +30,10 @@ Do S1 and S2 first: they are what lets both tracks run in parallel.
 Done when: CI green on an empty workspace, protocol doc agreed.
 
 ## D1 · Audio path spike (Linux, no code)
-- [ ] **D1.1** `tools/spike-receiver.sh`: FIFO + `pactl load-module module-pipe-source source_name=airmic … rate=48000 channels=1` + `nc -klu 5555` (unblocks M1.6)
-- [ ] **D1.2** Check firewall (`ufw status`), open the spike port if needed
+- [x] **D1.1** `tools/spike-receiver.sh`: FIFO + `pactl load-module module-pipe-source source_name=airmic … rate=48000 channels=1` + `nc -klu 5555` (unblocks M1.6)
+  - `pactl` is not installed here, so it loads `module-pipe-tunnel` through `pw-cli` instead. Verified locally: a 440 Hz sine over UDP recorded back exactly with `pw-record`.
+- [x] **D1.2** Check firewall (`ufw status`), open the spike port if needed
+  - ufw is installed but disabled (`ENABLED=no`). No rule needed.
 - [ ] **D1.3** Verify with `pw-record --target airmic` and Claude Code `/voice`; note PipeWire quantum and latency in `docs/notes/m1.md`
 
 ## D2 · Protocol crate and daemon core
