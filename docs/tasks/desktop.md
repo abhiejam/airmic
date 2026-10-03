@@ -16,6 +16,33 @@ Legend: `[ ]` todo, `[x]` done. **Unblocks** = a mobile task waiting on this. **
 
 Do S1 and S2 first: they are what lets both tracks run in parallel.
 
+## Status and handover (2026-10-03)
+
+Read this before starting desktop work. Everything below was checked on this machine on 2026-10-03; re-check anything you rely on.
+
+**Works end to end with the real iPhone:** discovery (mDNS), pairing with the 4 digit code from the daemon log, token reconnect, streaming into PipeWire, Claude Code `/voice` dictation through AirMic, mute, Wi-Fi blip recovery. S1, S2 and S3 are done. PC-side results: [`docs/notes/m1.md`](../notes/m1.md).
+
+**Known issues, in priority order**
+1. **Audio underruns (D2.6).** The phone stream has about 10 underruns and 23 dropped frames per minute on `main` (each a short gap). Jitter is low (~1.7 ms), so the cause is bursty arrival, drift, or both. Branch `desktop/jitter-target` (pushed, no PR) sizes the target from the worst arrival delay over 10 s: it fixes a synthetic 80 ms stall test, but on the real phone it only cut underruns to ~6/min while the target sat at the 120 ms cap, so it is not the whole answer. Next step: log per-packet `(arrival, sequence, timestamp)` for 60 s from the real phone and measure stall lengths and clock drift before changing the algorithm again. Do not merge that branch as is.
+2. **Phone drops the session right after reconnecting to a restarted daemon** (mobile track). The daemon log shows `session … ready` then `ended` 2.5 s later with no error, so the phone closes it cleanly. A prompt with this evidence was handed to the iOS session. Desktop needs no change.
+3. **D3.7 is partial.** IPC serves `status`, `get_settings`, `set_settings`, `make_default`, `subscribe` (`status`, `level`). Missing: `pairing_code`, `paired_devices`, `forget_device`. `pairing.rs` already has `current_code`, `regenerate_code`, `devices`, `forget`. Mismatch to resolve: `paired.json` stores `paired_at` in Unix **seconds** and has no `last_seen`, while `docs/ipc.md` promises Unix ms and `last_seen`. The QR `id` comes from `mdns::load_or_create_device_id`.
+4. The daemon sets AirMic as the default source on start and does not restore the previous default on exit.
+5. If PipeWire is unreachable at start, the daemon exits with the right error but also prints a Tokio "context is being shutdown" panic.
+6. `docs/notes/iphone-linux-checklist.md` (mobile's file) uses `pactl`, `avahi-browse` and `sudo ufw`, none of which work here, and its `clock.quantum` read shows 1024 while the graph runs at 480 (`pw-top` shows the real value).
+
+**Next, in order:** the three pairing IPC methods (small; unblocks D5.5) → D5 desktop app in its own session against `docs/ipc.md` → underrun investigation (issue 1) → D2.12 install and reboot test (ask the user before installing anything).
+
+**This machine:** Ubuntu 24.04.5, PipeWire 1.0.5, WirePlumber 0.4.17, Rust 1.99. `pactl` and `avahi-browse` are not installed; use `pw-cli`, `pw-dump`, `wpctl`, `pw-metadata`, `pw-top`. ufw is installed but disabled. LAN IP 192.168.20.42 on `wlp3s0`, hostname `nuc`. The user's own default mic is not AirMic: never change it (or install units, or use sudo) without asking, and restore it after a test.
+
+**Running and testing**
+- Real run: `cd desktop && cargo build --release -p airmicd && ./target/release/airmicd` (pairing on; the code appears in the log as `pairing code NNNN`). `--no-auth` skips pairing. `airmic-send --port <p> --seconds N [--loss 5 --jitter 20 --reorder 2]` plays the phone.
+- For test daemons use spare ports and keep the default mic alone: a scratch `config.toml` with `control_port`, `audio_port` (e.g. 47860/47861) and `set_default_source = false`, passed with `--config`.
+- A test `XDG_RUNTIME_DIR` must give a socket path under 108 bytes, and then PipeWire needs `PIPEWIRE_RUNTIME_DIR=/run/user/1000` to still find its own socket.
+- Record what apps hear: `pw-record --target airmic --rate 48000 --channels 1 out.wav`.
+- Before each PR: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` (53 tests on `main`).
+
+**Workflow:** see "Branches, stacks and conflicts" in `CLAUDE.md`. Each PR is merged with "Rebase and merge", so restack open branches after every merge. `gh` here must use `GH_TOKEN=$(gh auth token --user abhiejam)`. No `Co-Authored-By` lines.
+
 ---
 
 ## D0 · Setup
@@ -34,7 +61,8 @@ Done when: CI green on an empty workspace, protocol doc agreed.
   - `pactl` is not installed here, so it loads `module-pipe-tunnel` through `pw-cli` instead. Verified locally: a 440 Hz sine over UDP recorded back exactly with `pw-record`.
 - [x] **D1.2** Check firewall (`ufw status`), open the spike port if needed
   - ufw is installed but disabled (`ENABLED=no`). No rule needed.
-- [ ] **D1.3** Verify with `pw-record --target airmic` and Claude Code `/voice`; note PipeWire quantum and latency in `docs/notes/m1.md`
+- [x] **D1.3** Verify with `pw-record --target airmic` and Claude Code `/voice`; note PipeWire quantum and latency in `docs/notes/m1.md`
+  - Done with the real daemon instead of the spike script: phone speech dictated through `/voice` on 2026-10-03. Graph quantum 480/48000; see `docs/notes/m1.md`.
 
 ## D2 · Protocol crate and daemon core
 - [x] **D2.1** `airmic-proto`: header struct, encode/decode, control message enums (serde, newline JSON)
@@ -45,6 +73,7 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [x] **D2.5** UDP receiver on 47801: validate magic, version, session id
 - [x] **D2.6** Jitter buffer: reorder by sequence, adaptive 20–120 ms target, silence + short fade on loss, stats (loss, jitter)
   - Pull model: the sink reads samples at its own clock. Frames above target + 40 ms are dropped on every push and read (so the buffer stays short even when nothing records), and an underrun rebuffers. Target = 20 ms + 4 × jitter, clamped to 20–120 ms.
+  - Open: underruns on the real phone stream, see "Known issues" 1 above.
 - [x] **D2.7** Jitter buffer tests: loss, duplicates, reorder, late packets, sequence wrap
 - [x] **D2.8** `AudioSink` trait (write frames, report underruns)
   - Pull model: `AudioSink::run` reads from the jitter buffer at the device clock, so it has no `write`. Underruns are counted in the jitter buffer stats.
@@ -52,10 +81,10 @@ Done when: CI green on an empty workspace, protocol doc agreed.
   - `media.class` is `Audio/Source`, not `Audio/Source/Virtual`: WirePlumber 0.4.17 (Ubuntu 24.04) never creates ports for the virtual class. Requests 10 ms periods (`node.latency=480/48000`).
 - [ ] **D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)
   - Not needed so far: pipewire-rs 0.10 works on PipeWire 1.0.5.
-- [ ] **D2.11** Set AirMic as default source by name on start (configurable)
-  - Implemented via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Not yet run live: it changes the system default mic.
+- [x] **D2.11** Set AirMic as default source by name on start (configurable)
+  - Via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Verified live 2026-10-03 (`wpctl status` marks AirMic as default). The previous default is not restored on exit.
 - [ ] **D2.12** systemd user unit `packaging/airmicd.service`, start on login
-  - `packaging/airmicd.service` written (`/usr/bin/airmicd`, restart on failure). Not yet installed; it cannot start without `--no-auth` until D3.3.
+  - `packaging/airmicd.service` written (`/usr/bin/airmicd`, restart on failure). Not installed or reboot-tested yet. Pairing has landed, so the daemon now starts without `--no-auth`. For a dev install, a drop-in overriding `ExecStart` to the built binary works; ask the user first.
 
 Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, and it survives a reboot.
 
@@ -72,6 +101,7 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 - [x] **D3.6** Mute flag and header-only packets → silence output
 - [ ] **D3.7** IPC server behind a trait (Unix socket `$XDG_RUNTIME_DIR/airmic.sock`), JSON-RPC: `status`, `level`, `pairing_code`, `paired_devices`, `forget_device`, `settings`
   - Contract in `docs/ipc.md` (adds `make_default`, `subscribe`; `settings` split into get/set). The app (D5) builds against it in parallel.
+  - Partial: everything except `pairing_code`, `paired_devices`, `forget_device`. See "Known issues" 3 above.
 
 Done when: phone discovers the PC, pairs with the code, reconnects with its token; `airmic-send` covers the same in tests.
 
