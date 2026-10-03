@@ -1,5 +1,6 @@
 mod config;
 mod control;
+mod ipc;
 mod jitter;
 mod mdns;
 mod pairing;
@@ -81,13 +82,19 @@ async fn main() -> anyhow::Result<()> {
         let _ = sink_failed_tx.send(sink.run(sink_buffer));
     });
 
+    let socket = ipc::socket_path()?;
+    let ipc_listener = ipc::UnixSocket::bind(&socket)?;
+    info!("IPC on {}", socket.display());
+
     let (session_tx, session_rx) = watch::channel(None);
+    let ipc = ipc::Ipc::new(config_path, config.clone());
     let opts = ControlOptions {
         audio_port: config.audio_port,
         no_auth: args.no_auth,
     };
     tokio::select! {
         _ = control::serve(listener, opts, session_tx, pairing, buffer.clone()) => {}
+        _ = ipc::serve(ipc_listener, ipc) => {}
         _ = receiver::receive(udp, session_rx.clone(), buffer.clone()) => {}
         _ = receiver::log_stats(session_rx, buffer) => {}
         result = sink_failed => return result.context("audio output thread died")?,
@@ -96,5 +103,6 @@ async fn main() -> anyhow::Result<()> {
     if let Some(advert) = advert {
         advert.withdraw();
     }
+    let _ = std::fs::remove_file(&socket);
     Ok(())
 }
