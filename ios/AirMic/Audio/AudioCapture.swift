@@ -45,14 +45,7 @@ final class AudioCapture {
         let queue = SampleQueue(capacity: Int(format.sampleRate))
         let processor = try FrameProcessor(inputSampleRate: format.sampleRate, queue: queue, onFrame: onFrame)
 
-        // Realtime thread: copy channel 0 into the queue, nothing else.
-        let sink = AVAudioSinkNode { _, frameCount, bufferList in
-            let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))
-            if let data = buffers.first?.mData {
-                queue.write(data.assumingMemoryBound(to: Float.self), count: Int(frameCount))
-            }
-            return noErr
-        }
+        let sink = Self.makeSink(writingTo: queue)
         engine.attach(sink)
         engine.connect(input, to: sink, format: format)
         engine.prepare()
@@ -65,6 +58,19 @@ final class AudioCapture {
         processor.start()
         self.sink = sink
         self.processor = processor
+    }
+
+    /// Built outside the main actor: a closure written in a `@MainActor` method is main actor
+    /// isolated, and Swift 6 traps when the realtime thread calls it.
+    private nonisolated static func makeSink(writingTo queue: SampleQueue) -> AVAudioSinkNode {
+        // Realtime thread: copy channel 0 into the queue, nothing else.
+        AVAudioSinkNode { _, frameCount, bufferList in
+            let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))
+            if let data = buffers.first?.mData {
+                queue.write(data.assumingMemoryBound(to: Float.self), count: Int(frameCount))
+            }
+            return noErr
+        }
     }
 
     func stop() {

@@ -21,7 +21,7 @@ Until S2 lands, test audio with the zero-code Linux receiver (D1.1) and the cont
 ## M0 · Setup
 - [x] **M0.1** Create Xcode project `ios/AirMic` (SwiftUI app, iOS 18 min, Swift 6 language mode, bundle id `io.airmic.AirMic`)
   - `ios/AirMic.xcodeproj` uses folder-synced groups: new files under `ios/AirMic/` and `ios/AirMicTests/` need no project edits. Team `U9YF5FHVZY` (free Personal Team).
-- [ ] **M0.2** Signing with the personal team; iPhone in Developer Mode; app runs on device
+- [x] **M0.2** Signing with the personal team; iPhone in Developer Mode; app runs on device
 - [x] **M0.3** Info.plist: `NSMicrophoneUsageDescription`, `NSLocalNetworkUsageDescription`, `NSBonjourServices = _airmic._tcp`, `NSCameraUsageDescription`; `UIBackgroundModes = audio`
 - [x] **M0.4** Folders `App/ Audio/ Network/ Session/ UI/` and a test target `AirMicTests`
 
@@ -34,6 +34,7 @@ Done when: blank app installs on the iPhone from Xcode.
 - [x] **M1.3** Frame accumulator: exact 10 ms frames (480 samples, 960 bytes)
 - [x] **M1.4** Raw UDP sender (`NWConnection`) to a typed IP:port, **no header** (feeds the netcat receiver)
 - [x] **M1.5** Debug screen: IP field, port field, Start/Stop, live RMS number
+  - 2026-10-03: verified on iPhone 12 Pro Max → Mac UDP receiver: ~100 packets/s of 960 bytes, speech peaks -25 to -11 dBFS, 45 s recording played back.
 - [ ] **M1.6** Test: voice heard via `pw-record` and Claude Code `/voice` on Linux (needs D1.1)
 - [ ] **M1.7** Test: screen locked for 1 h, audio keeps flowing
 - [ ] **M1.8** Rough latency check (clap test with a recording) and note result in `docs/notes/m1.md`
