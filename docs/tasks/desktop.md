@@ -64,7 +64,8 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
   - Until D3.3 lands, `airmicd` refuses to start without `--no-auth`.
 - [ ] **D3.2** Periodic `stats` to the phone every 2 s
 - [ ] **D3.3** Pairing: 4 digit code (2 min, 5 attempts), 128 bit tokens, `~/.config/airmic/paired.json` → **S3**
-- [ ] **D3.4** mDNS advert `_airmic._tcp` with TXT `id`, `name`, `v` (`mdns-sd` crate) → **S3**
+- [x] **D3.4** mDNS advert `_airmic._tcp` with TXT `id`, `name`, `v` (`mdns-sd` crate) → **S3**
+  - Computer id is a UUID v4 kept in `~/.config/airmic/device_id`; instance name is the hostname.
 - [x] **D3.5** One active phone at a time; new phone gets a clear "busy" error
 - [ ] **D3.6** Mute flag and header-only packets → silence output
 - [ ] **D3.7** IPC server behind a trait (Unix socket `$XDG_RUNTIME_DIR/airmic.sock`), JSON-RPC: `status`, `level`, `pairing_code`, `paired_devices`, `forget_device`, `settings`
