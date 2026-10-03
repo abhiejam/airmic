@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wordmark logo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 624px; height: 400px; box-sizing: border-box; padding: 48px; display: flex; flex-direction: column; gap: 28px; background: #F6F2EA; color: #1B1A22; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif">
+  <div style="flex-grow: 1; display: flex; align-items: center; justify-content: center; font-size: 104px; font-weight: 600; letter-spacing: -0.04em; line-height: 1">
+    <span>a</span><span style="position: relative; display: inline-block">ı<svg viewBox="0 0 40 40" style="position: absolute; left: 50%; top: -0.06em; width: 0.42em; height: 0.42em; transform: translateX(-50%); color: {{accent}}"><circle cx="20" cy="24" r="6" fill="currentColor"></circle></svg></span><span>rm</span><span style="position: relative; display: inline-block">ı<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" style="position: absolute; left: calc(50% - 0.126em); top: -0.06em; width: 0.42em; height: 0.42em; overflow: visible; color: {{accent}}"><circle cx="12" cy="24" r="5.5" fill="currentColor" stroke="none"></circle><path d="M19.1 16.9 A10 10 0 0 1 19.1 31.1"></path><path d="M24 12 A17 17 0 0 1 24 36"></path></svg></span><span>c</span>
+  </div>
+  <div style="height: 120px; border-radius: 28px; background: #17161D; color: #F3F0E8; display: flex; align-items: center; justify-content: center; font-size: 56px; font-weight: 600; letter-spacing: -0.04em; line-height: 1">
+    <span>a</span><span style="position: relative; display: inline-block">ı<svg viewBox="0 0 40 40" style="position: absolute; left: 50%; top: -0.06em; width: 0.42em; height: 0.42em; transform: translateX(-50%); color: #ABA5FF"><circle cx="20" cy="24" r="6" fill="currentColor"></circle></svg></span><span>rm</span><span style="position: relative; display: inline-block">ı<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" style="position: absolute; left: calc(50% - 0.126em); top: -0.06em; width: 0.42em; height: 0.42em; overflow: visible; color: #ABA5FF"><circle cx="12" cy="24" r="5.5" fill="currentColor" stroke="none"></circle><path d="M19.1 16.9 A10 10 0 0 1 19.1 31.1"></path><path d="M24 12 A17 17 0 0 1 24 36"></path></svg></span><span>c</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#5146E5","options":["#5146E5","#2F6BEA","#7A4CE0"]},"$preview":{"width":624,"height":400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#5146E5' };
+  }
+}
+</script>
+</body>
+</html>

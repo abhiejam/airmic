@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Signal logo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 624px; height: 400px; box-sizing: border-box; padding: 48px; display: flex; flex-direction: column; gap: 36px; background: #F6F2EA; color: #1B1A22; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif">
+  <div style="display: flex; gap: 24px">
+    <sc-for list="{{big}}" as="tile" hint-placeholder-count="3">
+      <div style="width: {{tile.size}}; height: {{tile.size}}; border-radius: {{tile.radius}}; background: {{tile.bg}}; color: {{tile.fg}}; border: {{tile.border}}; box-sizing: border-box; display: flex; align-items: center; justify-content: center">
+        <svg width="{{tile.glyph}}" height="{{tile.glyph}}" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      </div>
+    </sc-for>
+  </div>
+  <div style="display: flex; align-items: center; justify-content: space-between">
+    <div style="display: flex; align-items: center; gap: 12px; color: {{accent}}">
+      <svg width="60" height="60" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      <span style="font-size: 48px; font-weight: 600; letter-spacing: -0.035em; color: #1B1A22">AirMic</span>
+    </div>
+    <div style="display: flex; align-items: flex-end; gap: 14px">
+      <sc-for list="{{small}}" as="tile" hint-placeholder-count="3">
+        <div style="width: {{tile.size}}; height: {{tile.size}}; border-radius: {{tile.radius}}; background: {{tile.bg}}; color: {{tile.fg}}; display: flex; align-items: center; justify-content: center">
+          <svg width="{{tile.glyph}}" height="{{tile.glyph}}" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#5146E5","options":["#5146E5","#2F6BEA","#7A4CE0"]},"$preview":{"width":624,"height":400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const a = this.props.accent ?? '#5146E5';
+    const t = (s, bg, fg, border) => ({ size: s + 'px', radius: Math.round(s * 0.2237) + 'px', glyph: Math.round(s * 0.64) + 'px', bg, fg, border: border || 'none' });
+    return {
+      accent: a,
+      big: [t(160, a, '#FFFFFF'), t(160, '#17161D', '#ABA5FF'), t(160, '#FFFFFF', a, '1px solid #E6E0D3')],
+      small: [t(64, a, '#FFFFFF'), t(40, a, '#FFFFFF'), t(28, a, '#FFFFFF')]
+    };
+  }
+}
+</script>
+</body>
+</html>

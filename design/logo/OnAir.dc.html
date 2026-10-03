@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OnAirMic lockups</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1328px; height: 440px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; justify-content: space-between; background: #F6F2EA; color: #1B1A22; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif">
+
+  <div style="display: flex; align-items: center; justify-content: space-between">
+    <div style="display: flex; align-items: center; gap: 12px; color: {{accent}}">
+      <svg width="60" height="60" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      <span style="font-size: 48px; font-weight: 600; letter-spacing: -0.035em; color: #1B1A22">OnAirMic</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; color: {{accent}}">
+      <svg width="60" height="60" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      <span style="font-size: 48px; letter-spacing: -0.035em; color: #1B1A22"><span style="font-weight: 400; color: #66646E">on</span><span style="font-weight: 600">AirMic</span></span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; color: {{accent}}">
+      <svg width="60" height="60" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      <span style="font-size: 48px; font-weight: 600; letter-spacing: -0.035em; color: #1B1A22">onairmic<span style="font-weight: 400; color: #66646E">.com</span></span>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; justify-content: space-between">
+    <div style="height: 88px; padding: 0 32px; border-radius: 22px; background: {{accent}}; color: #FFFFFF; display: flex; align-items: center; gap: 14px">
+      <svg width="44" height="44" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      <span style="font-size: 30px; font-weight: 700; letter-spacing: 0.22em">ON AIR</span>
+    </div>
+    <div style="height: 88px; padding: 0 32px; border-radius: 22px; background: #17161D; color: #ABA5FF; box-shadow: 0 0 0 1px #2C2C33, 0 0 48px -8px {{glow}}; display: flex; align-items: center; gap: 14px">
+      <svg width="44" height="44" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M32 72 H50"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+      <span style="font-size: 30px; font-weight: 700; letter-spacing: 0.22em; color: #F3F0E8">ON AIR</span>
+    </div>
+    <div style="width: 420px; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; border: 1px solid #E6E0D3; background: #FFFDF8">
+      <div style="height: 40px; padding: 0 12px; background: #ECE7DC; display: flex; align-items: flex-end">
+        <div style="height: 32px; padding: 0 14px; border-radius: 10px 10px 0 0; background: #FFFDF8; display: flex; align-items: center; gap: 8px; font-size: 13px">
+          <span style="width: 16px; height: 16px; border-radius: 4px; background: {{accent}}; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+            <svg width="12" height="12" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"></rect><path d="M26 44 A15 15 0 0 0 56 44"></path><path d="M41 59 V72"></path><path d="M62.4 14 A28 28 0 0 1 62.4 50"></path><path d="M73.2 5 A42 42 0 0 1 73.2 59"></path></g></svg>
+          </span>
+          AirMic · iPhone as a mic
+        </div>
+      </div>
+      <div style="height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #E6E0D3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#66646E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+        <span style="font-size: 14px">onairmic.com</span>
+      </div>
+      <div style="height: 40px"></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#5146E5","options":["#5146E5","#2F6BEA","#7A4CE0"]},"$preview":{"width":1328,"height":440}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const a = this.props.accent ?? '#5146E5';
+    const h = a.replace('#', '');
+    const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    return { accent: a, glow: 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',0.6)' };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Connect.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Connect to a PC",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "DarkConnect.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Dark · connect",
+      "w": 390,
+      "x": 1410,
+      "y": 1264
+    },
+    "DarkHome.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Dark · streaming",
+      "w": 390,
+      "x": 0,
+      "y": 1264
+    },
+    "DarkIdle.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Dark · no PC connected",
+      "w": 390,
+      "x": 940,
+      "y": 1264
+    },
+    "DarkMuted.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Dark · muted",
+      "w": 390,
+      "x": 470,
+      "y": 1264
+    },
+    "DarkSummary.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Dark · summary",
+      "w": 390,
+      "x": 1880,
+      "y": 1264
+    },
+    "HomeIdle.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Home · no PC connected",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "HomeMuted.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Home · muted",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Main.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Home · streaming",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "Summary.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "radius": 48,
+      "title": "Session summary",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-03T14:10:00+10:00",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "darkTitle": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "Dark",
+      "w": 240,
+      "x": 0,
+      "y": 964
+    },
+    "lightTitle": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "Light · cream",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "HomeMuted.dc.html",
+    "HomeIdle.dc.html",
+    "Connect.dc.html",
+    "Summary.dc.html",
+    "DarkHome.dc.html",
+    "DarkMuted.dc.html",
+    "DarkIdle.dc.html",
+    "DarkConnect.dc.html",
+    "DarkSummary.dc.html"
+  ],
+  "pages": [],
+  "title": "AirMic iPhone mockups"
+}

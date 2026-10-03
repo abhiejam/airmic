@@ -1,0 +1,23 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Airwaves.dc.html": {"h": 400, "title": "6 · Airwaves", "w": 624, "x": 1408, "y": 520},
+    "Breeze.dc.html": {"h": 400, "title": "4 · Breeze", "w": 624, "x": 0, "y": 520},
+    "Bridge.dc.html": {"h": 400, "title": "2 · Bridge", "w": 624, "x": 704, "y": 0},
+    "Main.dc.html": {"h": 400, "title": "1 · Signal", "w": 624, "x": 0, "y": 0},
+    "Ripple.dc.html": {"h": 400, "title": "5 · Ripple", "w": 624, "x": 704, "y": 520},
+    "Waveform.dc.html": {"h": 400, "title": "3 · Waveform capsule", "w": 624, "x": 1408, "y": 0},
+    "Wordmark.dc.html": {"h": 400, "title": "7 · Wordmark", "w": 624, "x": 0, "y": 1040},
+    "OnAir.dc.html": {"h": 440, "title": "8 · OnAirMic.com", "w": 1328, "x": 704, "y": 1040}
+  },
+  "createdOnFiles": {"at": "2026-10-03T15:20:00+10:00", "v": 1},
+  "designSystems": [],
+  "launch": {"view": "canvas"},
+  "notes": {
+    "title": {"kind": "title1", "maxW": 2032, "text": "AirMic logo concepts", "w": 240, "x": 0, "y": -300}
+  },
+  "order": ["Main.dc.html", "Bridge.dc.html", "Waveform.dc.html", "Breeze.dc.html", "Ripple.dc.html", "Airwaves.dc.html", "Wordmark.dc.html", "OnAir.dc.html"],
+  "pages": [],
+  "title": "AirMic logo concepts"
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AirMic home, dark, muted</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;family=Instrument+Serif&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit}
+@keyframes am-pulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.55);opacity:0}}
+.am-ring{position:absolute;border-radius:50%;box-sizing:border-box;animation:am-pulse 2.4s ease-out infinite}
+@keyframes am-bar{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+.am-bar{animation:am-bar 1.1s ease-in-out infinite;transform-origin:center}
+@media (prefers-reduced-motion: reduce){.am-ring,.am-bar{animation:none}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px">
+<dc-import name="Main" dark="{{yes}}" muted="{{yes}}" hint-size="390px,844px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return { yes: true, no: false }; }
+}
+</script>
+</body>
+</html>

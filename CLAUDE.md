@@ -7,6 +7,7 @@ iPhone as a wireless mic for a desktop computer. Native iPhone app streams mic a
 - `docs/tasks/mobile.md`: iPhone track (`ios/`).
 - `docs/tasks/desktop.md`: Linux track (`desktop/`).
 - Approved UI mockups: https://claude.ai/artifact/SFuouTH2921fG9QzJidshH (read with the Artifact tool).
+- Logo: the "Signal" mark (mic with two arcs) + wordmark "AirMic" in SF Pro semibold, board 1 of https://claude.ai/artifact/J6CQZq1NW4ka29idedE5Ga. Accent #5146E5.
 
 ## Two parallel tracks
 The project is built by two Claude Code sessions at once, one per track.
