@@ -138,7 +138,9 @@ Newline-delimited JSON messages. Phone connects, daemon answers.
 | `transcript {text, final}` | PC → phone | optional, for "Last thing you said" and word count |
 | `ping` / `pong` | both | keepalive every 2 s, timeout 6 s |
 | `bye` | both | end session |
+| `error {code, message}` | PC → phone | `busy`, `bad_code`, `pair_locked`, `unsupported_version`, `bad_message` |
 
+- Exact framing, flows and test vectors: [`protocol.md`](protocol.md), [`protocol/vectors.json`](protocol/vectors.json).
 - Pairing token: 128 bit random, stored in iOS Keychain and in `~/.config/airmic/paired.json`.
 - Pairing code: 4 digits, shown in desktop app, valid 2 minutes, 5 attempts.
 
