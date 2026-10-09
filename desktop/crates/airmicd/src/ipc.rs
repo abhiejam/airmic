@@ -1060,6 +1060,8 @@ mod tests {
         let (mut phone, _) = pair_phone(control, code.as_str().unwrap()).await;
         phone.send(r#"{"type":"bye"}"#).await.unwrap();
         let before = now_ms();
+        let mut session = daemon.session.subscribe();
+        session.wait_for(Option::is_none).await.unwrap();
         loop {
             let devices = call(&mut app, "paired_devices", Value::Null).await["result"].clone();
             if let Some(seen) = devices[0]["last_seen"].as_u64() {

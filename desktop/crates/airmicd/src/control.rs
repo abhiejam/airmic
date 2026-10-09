@@ -86,10 +86,11 @@ pub async fn serve(
                     .as_ref()
                     .filter(|s| s.id == id)
                     .map(|s| s.phone_id.clone());
-                session.send_if_modified(|s| clear_if_owner(s, id));
+                // Saved before the session clears, so an idle status implies last_seen is on disk.
                 if let Some(phone_id) = phone_id {
                     pairing.lock().expect("pairing lock").mark_seen(&phone_id);
                 }
+                session.send_if_modified(|s| clear_if_owner(s, id));
                 info!(%peer, "session {id:#010x} ended");
             }
         });
