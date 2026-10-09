@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+:root{--bg:#111114;--surface:#1B1B20;--ink:#F3F0E8;--muted:#A3A1AB;--line:#2C2C33;--accent:#857eed;--soft:rgba(133,126,237,.12);--shadow:rgba(133,126,237,.45);--warn:#F0894A;--ok:#4CC38A}
+html,body{margin:0;background:#ECEBE7}
+body{width:940px;height:964px;display:flex;align-items:center;justify-content:center;gap:40px;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif}
+.phone{width:390px;height:844px;box-sizing:border-box;border-radius:48px;overflow:hidden;padding:60px 24px 40px;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);box-shadow:0 30px 60px -30px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.08)}
+.top{display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:6px;font-weight:600;font-size:20px;letter-spacing:-.03em}
+.iconbtn{width:44px;height:44px;border-radius:22px;border:1px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.pill{margin-top:28px;align-self:center;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:14px}
+.dot{width:8px;height:8px;border-radius:50%}
+.ms{color:var(--muted);font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px}
+.timer{margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.clock{font-size:72px;font-weight:300;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.bar{width:140px;height:4px;border-radius:2px;background:var(--line);margin-top:10px;overflow:hidden}
+.bar>div{width:48%;height:100%;background:var(--accent)}
+.goal{font-size:13px;color:var(--muted);margin-top:4px}
+.center{flex-grow:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+.stage{position:relative;width:272px;height:272px;display:flex;align-items:center;justify-content:center}
+.halo{position:absolute;width:260px;height:260px;border-radius:50%;background:var(--soft)}
+.ring{position:absolute;width:188px;height:188px;border-radius:50%;box-sizing:border-box;border:2px solid var(--accent);animation:pulse 2.2s ease-out infinite paused}
+.mic{position:relative;width:188px;height:188px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.mic.live{background:var(--accent);color:var(--bg);box-shadow:0 24px 48px -16px var(--shadow)}
+.mic.off{background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+.wave{height:36px;display:flex;align-items:center;gap:4px}
+.wave span{width:4px;border-radius:2px}
+.wave.live span{background:var(--accent);animation:bar 1.1s ease-in-out infinite paused;transform-origin:center}
+.wave.off span{background:var(--line);height:4px}
+.caption{font-size:14px;color:var(--muted)}
+.bottom{flex-shrink:0;display:flex;align-items:center;justify-content:space-between}
+.end{height:48px;padding:0 20px;border-radius:24px;border:1px solid var(--line);background:var(--surface);display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;box-sizing:border-box}
+.fab{width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+@keyframes pulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.55);opacity:0}}
+@keyframes bar{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+</style>
+</head>
+<body>
+<template id="logo"><svg width="28" height="28" viewBox="0 0 100 100" fill="none" stroke="#857eed" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-4 10)"><rect x="31" y="14" width="20" height="36" rx="10"/><path d="M26 44 A15 15 0 0 0 56 44"/><path d="M41 59 V72"/><path d="M32 72 H50"/><path d="M62.4 14 A28 28 0 0 1 62.4 50"/><path d="M73.2 5 A42 42 0 0 1 73.2 59"/></g></svg></template>
+<div id="root"></div>
+<script>
+const t = parseFloat(location.hash.slice(1) || '0');
+const heights = [10,18,26,14,30,22,12,34,24,16,28,20,36,18,26,32,14,22,30,12,24,34,16,20,28,14,18,10];
+const mic = (size, sw, slash) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/>${slash ? '<path d="M3.5 3.5l17 17"/>' : ''}</svg>`;
+const sliders = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F3F0E8" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h9M19 7h1M4 17h3M13 17h7"/><circle cx="16" cy="7" r="2.5"/><circle cx="10" cy="17" r="2.5"/></svg>';
+const stop = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+// Negative delays freeze each animation at time t.
+const delay = (offset) => `animation-delay:${-(t + offset)}s`;
+function phone(live) {
+  const bars = heights.map((h, i) => live
+    ? `<span style="height:${h}px;${delay(-((i * 0.13) % 1.1))}"></span>`
+    : '<span></span>').join('');
+  const rings = live ? [0, 2.2 / 3, 4.4 / 3].map((d) => `<div class="ring" style="${delay(-d)}"></div>`).join('') : '';
+  return `<div class="phone">
+  <div class="top"><div class="brand">${document.getElementById('logo').innerHTML}<span>AirMic</span></div><div class="iconbtn">${sliders}</div></div>
+  <div class="pill"><span class="dot" style="background:${live ? 'var(--ok)' : 'var(--warn)'}"></span><span>${live ? 'On air' : 'Off air'} · ubuntu-desk</span>${live ? '<span class="ms">12 ms</span>' : ''}</div>
+  <div class="timer"><div class="label">Focus session</div><div class="clock">24:18</div><div class="bar"><div></div></div><div class="goal">26 min to your 50 min goal</div></div>
+  <div class="center">
+    <div class="stage">${live ? '<div class="halo"></div>' + rings : ''}<div class="mic ${live ? 'live' : 'off'}">${mic(64, 1.6, !live)}</div></div>
+    <div class="wave ${live ? 'live' : 'off'}">${bars}</div>
+    <div class="caption">${live ? 'Listening' : 'Muted · your PC hears silence'}</div>
+  </div>
+  <div class="bottom"><div class="end">${stop}End session</div>
+    <div class="fab" style="background:${live ? 'var(--ink)' : 'var(--warn)'};color:var(--bg);box-shadow:0 16px 32px -12px ${live ? 'rgba(0,0,0,.35)' : 'rgba(240,137,74,.55)'}">${mic(28, 1.9, !live)}</div></div>
+</div>`;
+}
+document.getElementById('root').outerHTML = phone(true) + phone(false);
+</script>
+</body>
+</html>
