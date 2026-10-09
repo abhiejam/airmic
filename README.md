@@ -2,7 +2,7 @@
 
 Use your iPhone as a wireless microphone for your Linux computer.
 
-The iPhone app streams its mic over local Wi-Fi to a small Linux daemon, `airmicd`.
+The iPhone app streams its mic over local Wi-Fi to a small Linux daemon, `airmic daemon`, which runs as the `airmicd` user service.
 The daemon adds a virtual input called "AirMic" that any app can use: Zoom, Discord, browsers, Claude Code `/voice`.
 Audio stays on your local network. There are no accounts and no cloud services.
 
@@ -30,15 +30,15 @@ Ubuntu doesn't ship `curl` by default. If it's missing, use `wget` instead:
 wget -qO- https://raw.githubusercontent.com/abhiejam/airmic/main/install.sh | sh
 ```
 
-The script downloads the latest release and checks its checksum. It puts `airmicd` in `~/.local/bin` and runs `airmicd install`. That sets up a systemd user service, so the daemon starts each time you log in. Run the same command again to update.
+The script downloads the latest release and checks its checksum. It puts `airmic` in `~/.local/bin` and runs `airmic install`. That sets up a systemd user service, so the daemon starts each time you log in. Run the same command again to update.
 
 Check that it runs:
 
 ```sh
-airmicd status
+airmic status
 ```
 
-If your shell can't find `airmicd`, log out and back in so `~/.local/bin` joins your `PATH`, or use `~/.local/bin/airmicd`.
+If your shell can't find `airmic`, log out and back in so `~/.local/bin` joins your `PATH`, or use `~/.local/bin/airmic`.
 
 <details>
 <summary>Or install the .deb package</summary>
@@ -50,7 +50,7 @@ sudo apt install ./airmic_*_amd64.deb
 systemctl --user start airmicd
 ```
 
-The package puts `airmicd` in `/usr/bin` and starts the service at every user's login. After an upgrade, run `systemctl --user restart airmicd`. Remove it with `sudo apt remove airmic`. Don't also run `airmicd install` with the package.
+The package puts `airmic` in `/usr/bin` and starts the service at every user's login. After an upgrade, run `systemctl --user restart airmicd`. Remove it with `sudo apt remove airmic`. Don't also run `airmic install` with the package.
 
 </details>
 
@@ -62,11 +62,11 @@ Download `airmic-<version>-x86_64-linux.tar.gz` from the [latest release](https:
 ```sh
 tar xzf airmic-*-x86_64-linux.tar.gz
 mkdir -p ~/.local/bin
-cp airmic-*/airmicd ~/.local/bin/
-~/.local/bin/airmicd install
+cp airmic-*/airmic ~/.local/bin/
+~/.local/bin/airmic install
 ```
 
-If you move the binary later, run `airmicd install` again.
+If you move the binary later, run `airmic install` again.
 
 </details>
 
@@ -92,13 +92,13 @@ Apps signed with a free Apple ID stop opening after **7 days**. To renew, plug t
 On the computer, run:
 
 ```sh
-airmicd pair
+airmic pair
 ```
 
 It prints a 4 digit code and a QR code, then waits.
 On the phone, open AirMic and tap **Connect to a computer**. Allow Local Network access when iOS asks.
 Your computer appears under **Nearby**. Tap it and type the code, or scan the QR code. Allow the microphone when asked.
-`airmicd pair` tells you when the phone has paired. The code expires after 2 minutes. Run `airmicd pair` again for a new one.
+`airmic pair` tells you when the phone has paired. The code expires after 2 minutes. Run `airmic pair` again for a new one.
 
 ## Daily use
 
@@ -110,17 +110,17 @@ The phone keeps streaming with its screen locked.
 
 ## CLI reference
 
-Plain `airmicd` runs the daemon itself. The systemd service does that for you. The subcommands below talk to the running daemon.
+Plain `airmic` prints help. `airmic daemon` runs the daemon itself, and the `airmicd` systemd service does that for you. The other subcommands talk to the running daemon.
 
 | Command | What it does |
 |---|---|
-| `airmicd status` | Shows the connected phone (or idle), whether it is muted, latency, packet loss, and whether AirMic is the default mic. Prints a hint when something needs fixing, such as a blocked firewall port. |
-| `airmicd pair` | Prints a 4 digit pairing code and a QR code, and waits until a phone pairs or the code expires. |
-| `airmicd devices` | Lists the paired phones with their ids. |
-| `airmicd forget <id>` | Removes a paired phone. If it is connected, it is disconnected. It needs a new code to pair again. |
-| `airmicd make-default` | Makes AirMic the default mic. |
-| `airmicd install` | Writes, enables and starts the systemd user service for this binary's path. |
-| `airmicd uninstall` | Stops, disables and removes the systemd user service. Your pairings and settings are kept. |
+| `airmic status` | Shows the connected phone (or idle), whether it is muted, latency, packet loss, and whether AirMic is the default mic. Prints a hint when something needs fixing, such as a blocked firewall port. |
+| `airmic pair` | Prints a 4 digit pairing code and a QR code, and waits until a phone pairs or the code expires. |
+| `airmic devices` | Lists the paired phones with their ids. |
+| `airmic forget <id>` | Removes a paired phone. If it is connected, it is disconnected. It needs a new code to pair again. |
+| `airmic make-default` | Makes AirMic the default mic. |
+| `airmic install` | Writes, enables and starts the systemd user service for this binary's path. |
+| `airmic uninstall` | Stops, disables and removes the systemd user service. Your pairings and settings are kept. |
 
 Files:
 - Settings: `~/.config/airmic/config.toml`. Set `set_default_source = false` if you don't want AirMic to become the default mic when the daemon starts. The daemon restores your previous default when it stops.
@@ -129,7 +129,7 @@ Files:
 
 ## Troubleshooting
 
-Run `airmicd status` first. It shows most problems and how to fix them.
+Run `airmic status` first. It shows most problems and how to fix them.
 
 ### Check that apps can hear AirMic
 
@@ -146,11 +146,11 @@ pw-play /tmp/airmic.wav
 
 ### AirMic is not the default mic
 
-Run `airmicd make-default`. Some apps keep their own mic setting, so also check the app's audio settings and pick "AirMic". In GNOME, Settings → Sound → Input also lets you choose it.
+Run `airmic make-default`. Some apps keep their own mic setting, so also check the app's audio settings and pick "AirMic". In GNOME, Settings → Sound → Input also lets you choose it.
 
 ### The phone connects but no audio arrives
 
-A firewall is most likely blocking the audio port. AirMic uses TCP 47800 for control and UDP 47801 for audio. `airmicd status` shows a hint when the phone is connected but no audio arrives.
+A firewall is most likely blocking the audio port. AirMic uses TCP 47800 for control and UDP 47801 for audio. `airmic status` shows a hint when the phone is connected but no audio arrives.
 
 If you use ufw, check whether it is active, then open both ports:
 
@@ -165,7 +165,7 @@ sudo ufw allow 47801/udp
 - Make sure the phone and the computer are on the same Wi-Fi network.
 - Guest networks and "AP isolation" (also called client isolation) stop devices on the same Wi-Fi from talking to each other. Use your main network, or turn isolation off in the router settings.
 - Some networks block the discovery traffic (mDNS) but still allow direct connections. In the app, tap **Enter IP address** and type the computer's address (`ip -4 addr` shows it) with port 47800.
-- Check that the daemon runs: `airmicd status`, or `journalctl --user -u airmicd` for its log.
+- Check that the daemon runs: `airmic status`, or `journalctl --user -u airmicd` for its log.
 
 ### The app won't open on the iPhone
 
@@ -185,7 +185,7 @@ The daemon needs Rust stable and the PipeWire development files:
 sudo apt install libpipewire-0.3-dev libclang-dev pkg-config
 cd desktop
 cargo build --release -p airmicd
-./target/release/airmicd install
+./target/release/airmic install
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and pull requests.
@@ -193,7 +193,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and pull requests.
 | Path | What |
 |---|---|
 | `ios/` | iPhone app (Swift, SwiftUI) |
-| `desktop/` | Rust workspace: `airmicd` daemon, `airmic-proto`, `airmic-send` test sender, Tauri app (v2) |
+| `desktop/` | Rust workspace: `airmicd` crate (the `airmic` binary), `airmic-proto`, `airmic-send` test sender, Tauri app (v2) |
 | `docs/PRD.md` | Product plan and architecture |
 | `docs/protocol.md` | Wire protocol between phone and computer |
 | `packaging/` | systemd user unit |

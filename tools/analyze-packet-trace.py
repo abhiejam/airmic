@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarises a packet trace from `AIRMIC_PACKET_TRACE=<file> airmicd`: stalls, bursts, clock drift, underruns."""
+"""Summarises a packet trace from `AIRMIC_PACKET_TRACE=<file> airmic daemon`: stalls, bursts, clock drift, underruns."""
 import csv
 import sys
 

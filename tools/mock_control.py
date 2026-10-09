@@ -4,7 +4,7 @@
 Speaks wire protocol v1 (docs/protocol.md): control on TCP 47800, audio on UDP 47801.
 Python 3 standard library only.
 
-  python3 tools/mock_control.py                    # like `airmicd --no-auth`
+  python3 tools/mock_control.py                    # like `airmic daemon --no-auth`
   python3 tools/mock_control.py --pair 0427        # unknown phones must enter this code
   python3 tools/mock_control.py --wav session.wav  # save the audio it receives
   python3 tools/mock_control.py --drop-after 20    # close the control connection after 20 s (reconnect test)

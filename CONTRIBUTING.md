@@ -4,7 +4,7 @@ Thanks for helping. Bug reports, fixes and small improvements are all welcome.
 
 ## Where things are
 
-- `desktop/`: Rust workspace with the `airmicd` daemon, `airmic-proto` (wire protocol) and `airmic-send` (a test sender that plays the phone).
+- `desktop/`: Rust workspace with the `airmicd` crate (the `airmic` binary and daemon), `airmic-proto` (wire protocol) and `airmic-send` (a test sender that plays the phone).
 - `ios/`: the iPhone app (Swift 6, SwiftUI, no third-party packages).
 - `docs/PRD.md` is the product plan. `docs/protocol.md` is the contract between phone and computer. A protocol change needs an update there and in `docs/protocol/vectors.json`.
 
@@ -34,7 +34,7 @@ audio_port = 47861
 set_default_source = false
 ```
 
-Then run `cargo run -p airmicd -- --config <that file> --no-auth`, and in another terminal `cargo run -p airmic-send -- --port 47860 --seconds 10`. `airmic-send --help` lists the flags for loss, jitter and reordering.
+Then run `cargo run -p airmicd -- daemon --config <that file> --no-auth`, and in another terminal `cargo run -p airmic-send -- --port 47860 --seconds 10`. `airmic-send --help` lists the flags for loss, jitter and reordering.
 
 If the AirMic service is installed, stop it first with `systemctl --user stop airmicd`. Both daemons would use the same IPC socket.
 
@@ -52,7 +52,7 @@ Open `ios/AirMic.xcodeproj` in Xcode and follow [docs/ios-install.md](docs/ios-i
 
 ## Reporting bugs
 
-Use the [bug report form](https://github.com/abhiejam/airmic/issues/new?template=bug_report.yml). The output of `airmicd status` and your Ubuntu, PipeWire and iOS versions make most bugs much faster to find.
+Use the [bug report form](https://github.com/abhiejam/airmic/issues/new?template=bug_report.yml). The output of `airmic status` and your Ubuntu, PipeWire and iOS versions make most bugs much faster to find.
 
 ## License
 
