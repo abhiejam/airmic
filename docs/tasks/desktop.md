@@ -107,6 +107,7 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 - [x] **D3.2** Periodic `stats` to the phone every 2 s
   - Sent with each ping once the session is ready.
 - [x] **D3.3** Pairing: 4 digit code (2 min, 5 attempts), 128 bit tokens, `~/.config/airmic/paired.json` → **S3**
+  - 2026-10-09 fix: a paired phone that forgot the computer sends `hello` with no `auth`; the daemon used to wait for `auth` forever (phone spinner). It now sends `pair_required` when no `auth` comes within 1 s.
   - Until D3.7, a `pair_required` issues a code and the daemon logs it. After a lockout only a new code from IPC (or a daemon restart) unlocks. A code pairs one phone, then is retired.
 - [x] **D3.4** mDNS advert `_airmic._tcp` with TXT `id`, `name`, `v` (`mdns-sd` crate) → **S3**
   - Computer id is a UUID v4 kept in `~/.config/airmic/device_id`; instance name is the hostname.

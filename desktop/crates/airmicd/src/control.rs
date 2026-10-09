@@ -18,6 +18,8 @@ use crate::sink::SharedBuffer;
 const MAX_LINE: usize = 64 * 1024;
 const PING_EVERY: Duration = Duration::from_secs(2);
 const PEER_TIMEOUT: Duration = Duration::from_secs(6);
+// A paired phone sends `auth` right after `hello`; no `auth` by then means it forgot this computer.
+const AUTH_GRACE: Duration = Duration::from_secs(1);
 
 /// The phone currently allowed to stream. The audio receiver drops packets for any other session.
 #[derive(Debug, Clone, PartialEq)]
@@ -122,6 +124,8 @@ async fn handle_phone(
     // (phone_id, phone_name) from the first hello.
     let mut phone: Option<(String, String)> = None;
     let mut pair_required_sent = false;
+    // Set while a known phone's `hello` waits for its `auth`.
+    let mut awaiting_auth_since: Option<Instant> = None;
     let mut ping_sent = None;
     let mut round_trip = None;
     let mut window_start: Option<Stats> = None;
@@ -144,6 +148,11 @@ async fn handle_phone(
             _ = ping.tick() => {
                 if last_rx.elapsed() >= PEER_TIMEOUT {
                     anyhow::bail!("peer timed out");
+                }
+                if awaiting_auth_since.is_some_and(|t| t.elapsed() >= AUTH_GRACE) {
+                    awaiting_auth_since = None;
+                    pair_required_sent = true;
+                    conn.send(request_pairing(pairing).to_line().trim_end()).await?;
                 }
                 conn.send(Message::Ping.to_line().trim_end()).await?;
                 ping_sent = Some(Instant::now());
@@ -202,7 +211,7 @@ async fn handle_phone(
                 if opts.no_auth {
                     None
                 } else if known {
-                    // A known phone sends `auth` right after `hello`.
+                    awaiting_auth_since = Some(Instant::now());
                     None
                 } else {
                     pair_required_sent = true;
@@ -223,6 +232,7 @@ async fn handle_phone(
                 None
             }
             (Message::Auth { token }, Some((phone_id, phone_name))) => {
+                awaiting_auth_since = None;
                 let valid = pairing
                     .lock()
                     .expect("pairing lock")
@@ -616,6 +626,19 @@ mod tests {
         let code = pairing.lock().unwrap().regenerate_code(issued);
         send(&mut phone, &pair_line(&code)).await;
         assert_eq!(error_code(recv(&mut phone).await), ErrorCode::BadCode);
+    }
+
+    #[tokio::test]
+    async fn paired_phone_without_a_token_is_asked_to_pair() {
+        let (addr, mut rx, pairing) = start_daemon(false).await;
+        let (mut phone, _) = pair_phone(addr, &pairing).await;
+        send(&mut phone, r#"{"type":"bye"}"#).await;
+        rx.wait_for(Option::is_none).await.unwrap();
+
+        // The phone forgot this computer, so it sends `hello` and no `auth`.
+        let mut phone = connect(addr).await;
+        send(&mut phone, HELLO).await;
+        assert_eq!(recv(&mut phone).await, Some(Message::PairRequired));
     }
 
     #[tokio::test]
