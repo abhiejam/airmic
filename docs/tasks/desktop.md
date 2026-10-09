@@ -121,7 +121,8 @@ Subcommands on the `airmicd` binary, so the release ships one binary. Each one i
 - [ ] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path
 - [ ] **D4.6** Restore the previous default source on exit (known issue 3)
 - [ ] **D4.7** Exit cleanly when PipeWire is unreachable, without the Tokio panic (known issue 4)
-- [ ] **D4.8** Firewall hint: phone connected on TCP but no UDP → log a warning and show it in `status` with the command to open the port
+- [x] **D4.8** Firewall hint: phone connected on TCP but no UDP → log a warning and show it in `status` with the command to open the port
+  - Daemon side: IPC `status` has `audio_blocked` (no packet 5 s after `ready`) and `audio_port`; the warning with `sudo ufw allow <port>/udp` is logged once per session. Showing it in `airmicd status` is D4.1.
 
 Done when: on a clean Ubuntu machine, unpack the release, run `airmicd install` and `airmicd pair`, pair the phone, and dictate through AirMic. It still works after a reboot.
 

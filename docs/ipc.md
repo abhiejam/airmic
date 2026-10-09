@@ -25,6 +25,8 @@ type Status = {
   phone: { id: string; name: string; addr: string } | null;
   stats: { loss_pct: number; jitter_ms: number; latency_ms: number } | null; // the phone's last 2 s `stats`; null when idle or before the first window
   audio_flowing: boolean;   // a UDP packet arrived in the last 2 s
+  audio_blocked: boolean;   // a session has been ready for 5 s without a single UDP packet; false once one arrives
+  audio_port: number;       // the UDP port the daemon listens on now
   is_default_source: boolean;
   version: string;          // daemon version
 };
@@ -50,7 +52,7 @@ type Settings = {
 };
 ```
 
-`audio_flowing` lets the app detect a blocked firewall (D5.9): `state` is `streaming` but `audio_flowing` stays `false`.
+`audio_blocked` means a firewall or Wi-Fi AP isolation probably drops the phone's audio (D4.8, D5.9). Show `sudo ufw allow <audio_port>/udp` and mention AP isolation. The daemon logs the same hint once per session. A gap later in a session sets only `audio_flowing` to `false`, not `audio_blocked`. That is a Wi-Fi drop, not a firewall.
 
 ## 3. Methods
 
@@ -97,6 +99,6 @@ Standard JSON-RPC codes (`-32700` parse error, `-32600` invalid request, `-32601
 ← {"jsonrpc":"2.0","id":1,"result":null}
 → {"jsonrpc":"2.0","id":2,"method":"pairing_code"}
 ← {"jsonrpc":"2.0","id":2,"result":{"code":"0427","expires_at":1791010000000,"qr":"airmic://pair?host=192.168.20.42&port=47800&id=6f1c…&code=0427"}}
-← {"jsonrpc":"2.0","method":"status","params":{"state":"streaming","phone":{"id":"3f25…","name":"Abhishek's iPhone","addr":"192.168.20.31"},"stats":{"loss_pct":0.0,"jitter_ms":2.1,"latency_ms":48.0},"audio_flowing":true,"is_default_source":true,"version":"0.1.0"}}
+← {"jsonrpc":"2.0","method":"status","params":{"state":"streaming","phone":{"id":"3f25…","name":"Abhishek's iPhone","addr":"192.168.20.31"},"stats":{"loss_pct":0.0,"jitter_ms":2.1,"latency_ms":48.0},"audio_flowing":true,"audio_blocked":false,"audio_port":47801,"is_default_source":true,"version":"0.1.0"}}
 ← {"jsonrpc":"2.0","method":"level","params":{"rms":0.12,"peak":0.4}}
 ```
