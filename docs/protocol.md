@@ -62,6 +62,7 @@ PC    → ready {...}
 ```
 
 - The phone sends `auth` right after `hello` without waiting. If the token is unknown (the PC forgot the phone), the PC answers `pair_required` and the phone deletes its stored token.
+- If the PC knows the phone but no `auth` arrives within about 1 s of `hello` (the phone forgot the PC and has no token), the PC sends `pair_required` on its next ping tick, so within 3 s.
 - A wrong code answers `error {code:"bad_code"}`; the connection stays open for another `pair`.
 - Daemon run with `--no-auth` (development): `hello` is answered with `ready` directly. `auth` is accepted and ignored.
 - Only the first `hello` counts. `ping`, `pong` and `bye` are valid any time after `hello`, so pairing can take longer than the 6 s timeout. `mute` is valid only after `ready`.
