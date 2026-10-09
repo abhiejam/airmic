@@ -173,9 +173,15 @@ Done when: on a clean Ubuntu VM, install the `.deb`, open the app, pair the phon
   - The iPhone sideload guide already exists (`docs/ios-install.md`, M7.5). Make it prominent in the install steps and state that a Mac with Xcode is needed for now.
 - [ ] **D7.5** GitHub release v1.0: `airmicd` x86_64 Linux tarball with the unit file and README
   - `.deb` and AppImage move to v2 with D5.10.
-  - `.github/workflows/release.yml` builds the tarball (plus a `.sha256`) and creates a draft release on a `v*` tag. No tag pushed yet.
+  - `.github/workflows/release.yml` builds the tarball and the `.deb` (each with a `.sha256`) and creates a draft release on a `v*` tag. On PRs that touch packaging it builds and test-installs them without releasing. No tag pushed yet.
 - [x] **D7.6** Open source prep: contributing notes, issue templates, and a feedback ask in the README ("would you pay for an App Store build?")
   - `CONTRIBUTING.md`; bug report, feature request and feedback forms in `.github/ISSUE_TEMPLATE/`. The README feedback ask links the feedback form (Discussions may not be enabled).
+
+- [x] **D7.7** One command install: `install.sh` (curl or wget, no sudo) downloads the latest release, checks the checksum, installs `~/.local/bin/airmicd` and runs `airmicd install`
+  - Tested 2026-10-09 against a local fake release: fresh install, bad checksum, no release. The upgrade restart path is untested, since it would restart the user's real service.
+- [x] **D7.8** `.deb` package: `packaging/build-deb.sh` (plain `dpkg-deb`, no cargo-deb), `/usr/bin/airmicd` plus the user unit enabled with `systemctl --global`
+  - A PPA or the Debian archive can come later if v1 gets traction: Launchpad builds offline, so the Rust dependencies would need vendoring.
+- [x] **D7.9** Install guide for AI agents: `docs/agent-install.md`, `llms.txt`, and a "paste this into your agent" prompt in the README
 
 ## Later (v2)
 - [ ] **L.1** Dictation: study `whisrs`, Wayland text injection, push-to-talk from phone, desktop hotkey

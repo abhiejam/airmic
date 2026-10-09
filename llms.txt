@@ -1,0 +1,17 @@
+# AirMic
+
+> Use an iPhone as a wireless microphone for a Linux computer. The iPhone app streams its mic over local Wi-Fi to `airmicd`, a Rust daemon that exposes a PipeWire microphone called "AirMic". Open source, MIT, no accounts or cloud.
+
+## Install
+
+- [Agent install guide](https://raw.githubusercontent.com/abhiejam/airmic/main/docs/agent-install.md): step by step instructions for an AI agent installing AirMic for a user
+- [Install script](https://raw.githubusercontent.com/abhiejam/airmic/main/install.sh): one command install of the latest release, no sudo
+- [README](https://raw.githubusercontent.com/abhiejam/airmic/main/README.md): install, CLI reference and troubleshooting for people
+- [iPhone app install](https://raw.githubusercontent.com/abhiejam/airmic/main/docs/ios-install.md): sideload the app from Xcode on a Mac
+
+## Develop
+
+- [AGENTS.md](https://raw.githubusercontent.com/abhiejam/airmic/main/AGENTS.md): instructions for coding agents working on this repo
+- [Product plan](https://raw.githubusercontent.com/abhiejam/airmic/main/docs/PRD.md): architecture and milestones
+- [Wire protocol](https://raw.githubusercontent.com/abhiejam/airmic/main/docs/protocol.md): phone to computer protocol
+- [Daemon IPC](https://raw.githubusercontent.com/abhiejam/airmic/main/docs/ipc.md): JSON-RPC over the Unix socket that the CLI uses
