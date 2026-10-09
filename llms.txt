@@ -1,6 +1,6 @@
 # AirMic
 
-> Use an iPhone as a wireless microphone for a Linux computer. The iPhone app streams its mic over local Wi-Fi to `airmicd`, a Rust daemon that exposes a PipeWire microphone called "AirMic". Open source, MIT, no accounts or cloud.
+> Use an iPhone as a wireless microphone for a Linux computer. The iPhone app streams its mic over local Wi-Fi to `airmic`, a Rust daemon that exposes a PipeWire microphone called "AirMic". Open source, MIT, no accounts or cloud.
 
 ## Install
 

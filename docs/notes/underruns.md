@@ -1,7 +1,7 @@
 # Audio underruns on the phone stream (D2.6)
 
 Investigated 2026-10-03 on the real iPhone, PC on Wi-Fi (Intel 8260, -55 dBm, channel 149, power save off).
-Tools: `AIRMIC_PACKET_TRACE=<file> airmicd` writes one CSV row per packet, `tools/analyze-packet-trace.py <file>` summarises it.
+Tools: `AIRMIC_PACKET_TRACE=<file> airmic daemon` writes one CSV row per packet, `tools/analyze-packet-trace.py <file>` summarises it.
 
 ## Result
 
