@@ -2,6 +2,10 @@
 
 Use your iPhone as a wireless microphone for your Linux computer.
 
+<p align="center">
+  <img src="docs/images/airmic-iphone.gif" width="600" alt="The AirMic iPhone app: on air and streaming with a live waveform, next to the muted screen">
+</p>
+
 The iPhone app streams its mic over local Wi-Fi to a small Linux daemon, `airmic daemon`, which runs as the `airmicd` user service.
 The daemon adds a virtual input called "AirMic" that any app can use: Zoom, Discord, browsers, Claude Code `/voice`.
 Audio stays on your local network. There are no accounts and no cloud services.
