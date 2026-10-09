@@ -546,7 +546,10 @@ async fn publish_status(ipc: Arc<Ipc>) {
         let audio_blocked = audio
             .as_mut()
             .is_some_and(|a| a.check_blocked(last_packet, ipc.audio_port));
-        let is_default = tokio::task::block_in_place(|| ipc.default_source.is_default());
+        // Not block_in_place: a task inside it outlives runtime shutdown, then panics on `tick`.
+        let probe = ipc.clone();
+        let check = tokio::task::spawn_blocking(move || probe.default_source.is_default());
+        let Ok(is_default) = check.await else { return };
         let new = ipc.build_status(is_default, audio_blocked);
         let old = ipc.status.send_replace(new.clone());
         let changed = Status { stats: None, ..old }
