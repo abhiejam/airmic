@@ -31,33 +31,35 @@ use crate::pipewire_sink::{PipeWireDefault, PipeWireSink};
 use crate::receiver::{LastPacket, Level};
 use crate::sink::AudioSink;
 
-/// AirMic daemon: receives audio from the iPhone app and exposes it as a microphone.
+/// AirMic: use your iPhone as a wireless microphone.
 #[derive(Parser)]
-#[command(version)]
+#[command(name = "airmic", version, arg_required_else_help = true)]
 struct Args {
-    /// Accept any phone without pairing (development only).
-    #[arg(long)]
-    no_auth: bool,
-
-    /// Config file. Default: ~/.config/airmic/config.toml
-    #[arg(long)]
-    config: Option<PathBuf>,
-
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
     #[command(flatten)]
     Client(cli::Command),
-    /// Install and start airmicd as a systemd user service for this binary.
+    /// Run the daemon in the foreground. The airmicd service runs this.
+    Daemon {
+        /// Accept any phone without pairing (development only).
+        #[arg(long)]
+        no_auth: bool,
+
+        /// Config file. Default: ~/.config/airmic/config.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Install and start the airmicd systemd user service for this binary.
     Install {
         /// Print the unit and commands without changing anything.
         #[arg(long)]
         dry_run: bool,
     },
-    /// Stop airmicd and remove its systemd user service.
+    /// Stop the airmicd service and remove it.
     Uninstall,
 }
 
@@ -72,17 +74,14 @@ async fn main() -> anyhow::Result<()> {
         log.init();
     }
 
-    let args = Args::parse();
-    match args.command {
-        Some(Command::Client(command)) => return cli::run(command).await,
-        Some(Command::Install { dry_run }) => return install::install(dry_run),
-        Some(Command::Uninstall) => return install::uninstall(),
-        None => {}
-    }
+    let (no_auth, config_arg) = match Args::parse().command {
+        Command::Client(command) => return cli::run(command).await,
+        Command::Daemon { no_auth, config } => (no_auth, config),
+        Command::Install { dry_run } => return install::install(dry_run),
+        Command::Uninstall => return install::uninstall(),
+    };
     let config_dir = config::config_dir()?;
-    let config_path = args
-        .config
-        .unwrap_or_else(|| config_dir.join("config.toml"));
+    let config_path = config_arg.unwrap_or_else(|| config_dir.join("config.toml"));
     let config = Config::load(&config_path)?;
     let pairing = Arc::new(Mutex::new(Pairing::load(config_dir.join("paired.json"))?));
     let device_id = mdns::load_or_create_device_id(&config_dir)?;
@@ -134,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let opts = ControlOptions {
         audio_port: config.audio_port,
-        no_auth: args.no_auth,
+        no_auth,
     };
     // SIGTERM is how `systemctl --user stop` ends the daemon.
     let mut terminate = signal(SignalKind::terminate()).context("SIGTERM handler")?;

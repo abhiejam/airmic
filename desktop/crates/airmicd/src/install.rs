@@ -1,4 +1,4 @@
-//! `airmicd install` and `airmicd uninstall`: the systemd user unit for the running binary.
+//! `airmic install` and `airmic uninstall`: the airmicd systemd user unit for the running binary.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -17,7 +17,7 @@ pub fn install(dry_run: bool) -> anyhow::Result<()> {
     refuse_sudo()?;
     let exe = std::env::current_exe()
         .and_then(fs::canonicalize)
-        .context("finding the airmicd binary")?;
+        .context("finding the airmic binary")?;
     let unit = render_unit(&exe)?;
     let dir = find_user_unit_dir()?;
     if dry_run {
@@ -64,7 +64,7 @@ fn install_unit(dir: &Path, unit: &str, systemctl: Systemctl) -> anyhow::Result<
         systemctl(&["restart", "airmicd"])?;
     }
     println!("airmicd is running and starts on login.");
-    println!("Next: run `airmicd pair` and enter the code on your iPhone.");
+    println!("Next: run `airmic pair` and enter the code on your iPhone.");
     Ok(())
 }
 
@@ -84,11 +84,9 @@ fn uninstall_unit(dir: &Path, systemctl: Systemctl) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Returns the packaged unit with `ExecStart` pointing at `exe`.
+/// Returns the packaged unit with `ExecStart` running `exe daemon`.
 fn render_unit(exe: &Path) -> anyhow::Result<String> {
-    let exe = exe
-        .to_str()
-        .context("the airmicd path is not valid UTF-8")?;
+    let exe = exe.to_str().context("the airmic path is not valid UTF-8")?;
     // systemd expands `%` specifiers and splits the command line on whitespace.
     let mut exe = exe.replace('%', "%%");
     if exe.contains(|c: char| c.is_whitespace() || c == '"' || c == '\\') {
@@ -97,7 +95,7 @@ fn render_unit(exe: &Path) -> anyhow::Result<String> {
     Ok(UNIT_TEMPLATE
         .lines()
         .map(|line| match line.starts_with("ExecStart=") {
-            true => format!("ExecStart={exe}\n"),
+            true => format!("ExecStart={exe} daemon\n"),
             false => format!("{line}\n"),
         })
         .collect())
@@ -126,7 +124,7 @@ fn run_systemctl(args: &[&str]) -> anyhow::Result<()> {
     let output = match Command::new("systemctl").arg("--user").args(args).output() {
         Ok(output) => output,
         Err(e) if e.kind() == ErrorKind::NotFound => {
-            bail!("systemctl not found: airmicd install needs systemd")
+            bail!("systemctl not found: airmic install needs systemd")
         }
         Err(e) => return Err(e).context("running systemctl"),
     };
@@ -163,18 +161,21 @@ mod tests {
 
     #[test]
     fn render_points_exec_start_at_the_binary() {
-        let unit = render_unit(Path::new("/home/me/airmic/airmicd")).unwrap();
-        assert_eq!(find_exec_start(&unit), Some("/home/me/airmic/airmicd"));
+        let unit = render_unit(Path::new("/home/me/.local/bin/airmic")).unwrap();
+        assert_eq!(
+            find_exec_start(&unit),
+            Some("/home/me/.local/bin/airmic daemon")
+        );
         assert!(unit.contains("WantedBy=default.target\n"));
-        assert!(!unit.contains("/usr/bin/airmicd"));
+        assert!(!unit.contains("/usr/bin/airmic"));
     }
 
     #[test]
     fn render_quotes_spaces_and_escapes_specifiers() {
-        let unit = render_unit(Path::new("/home/me/my apps/100%/airmicd")).unwrap();
+        let unit = render_unit(Path::new("/home/me/my apps/100%/airmic")).unwrap();
         assert_eq!(
             find_exec_start(&unit),
-            Some("\"/home/me/my apps/100%%/airmicd\"")
+            Some("\"/home/me/my apps/100%%/airmic\" daemon")
         );
     }
 

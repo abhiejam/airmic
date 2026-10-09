@@ -1,4 +1,4 @@
-//! The `airmicd` subcommands other than the daemon itself: thin clients over the IPC socket (docs/ipc.md).
+//! The `airmic` subcommands that talk to the running daemon: thin clients over the IPC socket (docs/ipc.md).
 
 use std::fmt::Write as _;
 use std::io::Write;
@@ -78,7 +78,7 @@ impl Client {
     async fn connect(path: &Path) -> anyhow::Result<Client> {
         let stream = UnixStream::connect(path).await.map_err(|e| {
             anyhow!(
-                "airmicd is not running ({}: {e}). Start it with `airmicd`.",
+                "airmicd is not running ({}: {e}). Start it with `systemctl --user start airmicd` or `airmic daemon`.",
                 path.display()
             )
         })?;
@@ -152,7 +152,7 @@ async fn pair(client: &mut Client, out: &mut impl Write) -> anyhow::Result<()> {
     tokio::pin!(expired);
     loop {
         tokio::select! {
-            _ = &mut expired => bail!("the code expired. Run `airmicd pair` again for a new one."),
+            _ = &mut expired => bail!("the code expired. Run `airmic pair` again for a new one."),
             woke = client.wait_for_notification() => woke?,
         }
         let devices = client.call("paired_devices", Value::Null).await?;
@@ -182,7 +182,7 @@ async fn forget(client: &mut Client, id: &str, out: &mut impl Write) -> anyhow::
         .collect();
     let device = match matches[..] {
         [device] => device,
-        [] => bail!("no paired phone with id {id}. `airmicd devices` lists them."),
+        [] => bail!("no paired phone with id {id}. `airmic devices` lists them."),
         _ => bail!("{id} matches more than one phone. Give more of the id."),
     };
     let phone_id = device["phone_id"].as_str().unwrap_or_default();
@@ -254,7 +254,7 @@ fn render_status(status: &Value) -> String {
     } else {
         line(
             "Default mic",
-            "no. Run `airmicd make-default` to make AirMic the default mic.",
+            "no. Run `airmic make-default` to make AirMic the default mic.",
         );
     }
     for (key, value) in status.as_object().into_iter().flatten() {
@@ -270,7 +270,7 @@ fn render_status(status: &Value) -> String {
 fn render_devices(devices: &Value, now_ms: u64) -> String {
     let devices = devices.as_array().map(Vec::as_slice).unwrap_or_default();
     if devices.is_empty() {
-        return "No paired phones. Run `airmicd pair` to pair one.\n".into();
+        return "No paired phones. Run `airmic pair` to pair one.\n".into();
     }
     let field = |d: &Value, key: &str| d[key].as_str().unwrap_or_default().to_string();
     let name_width = devices
@@ -383,7 +383,7 @@ mod tests {
         assert!(text.contains("State:       connected, muted"), "{text}");
         assert!(text.contains("Latency:     48 ms"), "{text}");
         assert!(text.contains("Loss:        1.2%"), "{text}");
-        assert!(text.contains("airmicd make-default"), "{text}");
+        assert!(text.contains("airmic make-default"), "{text}");
         assert!(text.contains("`sudo ufw allow 47801/udp`"), "{text}");
         assert!(text.contains("from a newer daemon"), "{text}");
     }
@@ -416,7 +416,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("p2  Old iPad  2 h ago       never"), "{text}");
-        assert!(render_devices(&json!([]), now).contains("airmicd pair"));
+        assert!(render_devices(&json!([]), now).contains("airmic pair"));
     }
 
     #[tokio::test]
