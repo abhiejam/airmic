@@ -6,13 +6,13 @@ The iPhone app streams its mic over local Wi-Fi to a small Linux daemon, `airmic
 The daemon adds a virtual input called "AirMic" that any app can use: Zoom, Discord, browsers, Claude Code `/voice`.
 Audio stays on your local network. There are no accounts and no cloud services.
 
-Status: v1. It needs Ubuntu (or another Linux) with PipeWire, and an iPhone on iOS 18 or later.
+Status: v1. It needs Ubuntu 24.04 or later (or another Linux with glibc 2.39 and PipeWire), and an iPhone on iOS 18 or later.
 The iPhone app is not on the App Store yet, so you install it from Xcode on a Mac.
 
 ## Install
 
 You need three things:
-- A Linux computer with PipeWire. Ubuntu 22.10 and later use PipeWire by default.
+- Ubuntu 24.04 or later, or another Linux with PipeWire and glibc 2.39 or newer. The release binary is built on Ubuntu 24.04. On older systems, build from source.
 - An iPhone on iOS 18 or later, on the same Wi-Fi as the computer.
 - **A Mac with Xcode**, to install the iPhone app. This is needed until there is an App Store build.
 
