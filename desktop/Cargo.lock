@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "airmic-proto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "airmic-send"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "airmic-proto",
  "anyhow",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "airmicd"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "airmic-proto",
  "anyhow",
