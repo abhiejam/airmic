@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context;
 use clap::Parser;
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tracing::{info, warn};
@@ -77,8 +78,9 @@ async fn main() -> anyhow::Result<()> {
     let buffer = Arc::new(Mutex::new(JitterBuffer::new()));
     let level = Arc::new(Level::default());
     let last_packet = LastPacket::default();
+    let default_source = Arc::new(PipeWireDefault::default());
     let sink: Box<dyn AudioSink> = Box::new(PipeWireSink {
-        set_default_source: config.set_default_source,
+        default_source: config.set_default_source.then(|| default_source.clone()),
     });
     let (sink_failed_tx, sink_failed) = oneshot::channel();
     let sink_buffer = buffer.clone();
@@ -95,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
         session_rx.clone(),
         level.clone(),
         last_packet.clone(),
-        Box::new(PipeWireDefault),
+        default_source.clone(),
         config_path,
         config.clone(),
         ipc::PairingContext {
@@ -109,17 +111,29 @@ async fn main() -> anyhow::Result<()> {
         audio_port: config.audio_port,
         no_auth: args.no_auth,
     };
-    tokio::select! {
-        _ = control::serve(listener, opts, session_tx, pairing, buffer.clone()) => {}
-        _ = ipc::serve(ipc_listener, ipc) => {}
-        _ = receiver::receive(udp, session_rx.clone(), buffer.clone(), last_packet, level) => {}
-        _ = receiver::log_stats(session_rx, buffer) => {}
-        result = sink_failed => return result.context("audio output thread died")?,
-        _ = tokio::signal::ctrl_c() => info!("shutting down"),
+    // SIGTERM is how `systemctl --user stop` ends the daemon.
+    let mut terminate = signal(SignalKind::terminate()).context("SIGTERM handler")?;
+    let result = tokio::select! {
+        _ = control::serve(listener, opts, session_tx, pairing, buffer.clone()) => Ok(()),
+        _ = ipc::serve(ipc_listener, ipc) => Ok(()),
+        _ = receiver::receive(udp, session_rx.clone(), buffer.clone(), last_packet, level) => Ok(()),
+        _ = receiver::log_stats(session_rx, buffer) => Ok(()),
+        result = sink_failed => result.context("audio output thread died").and_then(|r| r),
+        _ = tokio::signal::ctrl_c() => {
+            info!("shutting down");
+            Ok(())
+        }
+        _ = terminate.recv() => {
+            info!("shutting down");
+            Ok(())
+        }
+    };
+    if let Err(e) = default_source.restore_previous() {
+        warn!("could not restore the previous default microphone: {e:#}");
     }
     if let Some(advert) = advert {
         advert.withdraw();
     }
     let _ = std::fs::remove_file(&socket);
-    Ok(())
+    result
 }
