@@ -6,7 +6,7 @@ After=pipewire.service wireplumber.service
 Wants=pipewire.service
 
 [Service]
-ExecStart=/usr/bin/airmicd
+ExecStart=/usr/bin/airmic daemon
 Restart=on-failure
 RestartSec=2
 
