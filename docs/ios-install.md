@@ -30,7 +30,7 @@ Apps signed with a free Apple ID stop opening after **7 days**. To renew, plug t
 Other free-account limits: at most 3 of your own apps on a device at once, and no TestFlight. AirMic needs nothing that a free account can't do: microphone, background audio, local network, Bonjour and the camera all work.
 
 ## First run
-1. **Install and start the daemon** on the computer: see the [desktop README](../README.md#build-desktop) and [the Linux test checklist](notes/iphone-linux-checklist.md).
+1. **Install and start the daemon** on the computer: see [Install in the README](../README.md#install).
 2. **Open AirMic** and tap **Connect to a computer**.
 3. **Allow Local Network** when iOS asks. Your computer shows up under **Nearby**.
 4. **Pair:** tap the computer and type the 4 digit code it shows. Allow the microphone when asked.
