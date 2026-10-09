@@ -221,7 +221,7 @@ pub struct Ipc {
     session: watch::Receiver<Option<Session>>,
     level: Arc<Level>,
     last_packet: LastPacket,
-    default_source: Box<dyn DefaultSource>,
+    default_source: Arc<dyn DefaultSource>,
     config_path: PathBuf,
     config: Mutex<Config>,
     /// The UDP port bound at start; `config.audio_port` may hold a change pending a restart.
@@ -237,7 +237,7 @@ impl Ipc {
         session: watch::Receiver<Option<Session>>,
         level: Arc<Level>,
         last_packet: LastPacket,
-        default_source: Box<dyn DefaultSource>,
+        default_source: Arc<dyn DefaultSource>,
         config_path: PathBuf,
         config: Config,
         pairing: PairingContext,
@@ -664,7 +664,7 @@ mod tests {
             session_rx,
             level.clone(),
             last_packet.clone(),
-            Box::new(FakeDefault(Arc::default())),
+            Arc::new(FakeDefault(Arc::default())),
             dir.path().join("config/config.toml"),
             Config::default(),
             PairingContext {

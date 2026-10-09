@@ -33,7 +33,7 @@ Read this before starting desktop work. Everything below was checked on this mac
 **Known issues, in priority order**
 1. **Audio underruns (D2.6).** The phone stream has about 10 underruns and 23 dropped frames per minute on `main` (each a short gap). Jitter is low (~1.7 ms), so the cause is bursty arrival, drift, or both. Branch `desktop/jitter-target` (pushed, no PR) sizes the target from the worst arrival delay over 10 s: it fixes a synthetic 80 ms stall test, but on the real phone it only cut underruns to ~6/min while the target sat at the 120 ms cap, so it is not the whole answer. Investigated 2026-10-03 with `AIRMIC_PACKET_TRACE=<file> airmicd` and `tools/analyze-packet-trace.py`: the cause is Wi-Fi link stalls, not clock drift (about -14 ppm). Details and numbers in [`docs/notes/underruns.md`](../notes/underruns.md). **Low priority** (the user has not heard it while dictating with `/voice`). Options if it is picked up again: Ethernet for the PC, a higher target cap (160 ms would prevent about 23 of 28 underruns in the capture, at that much latency), or concealing short gaps. Do not merge `desktop/jitter-target` as is.
 2. **Phone drops the session right after reconnecting to a restarted daemon** (mobile track). The daemon log shows `session … ready` then `ended` 2.5 s later with no error, so the phone closes it cleanly. A prompt with this evidence was handed to the iOS session. Desktop needs no change.
-3. The daemon sets AirMic as the default source on start and does not restore the previous default on exit.
+3. The daemon sets AirMic as the default source on start and does not restore the previous default on exit. Fix written in D4.6, live check pending.
 4. ~~If PipeWire is unreachable at start, the daemon exits with the right error but also prints a Tokio "context is being shutdown" panic.~~ Fixed in D4.7.
 5. `docs/notes/iphone-linux-checklist.md` (mobile's file) uses `pactl`, `avahi-browse` and `sudo ufw`, none of which work here, and its `clock.quantum` read shows 1024 while the graph runs at 480 (`pw-top` shows the real value).
 
@@ -89,7 +89,7 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [ ] ~~**D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)~~
   - Dropped for v1: pipewire-rs 0.10 works on PipeWire 1.0.5.
 - [x] **D2.11** Set AirMic as default source by name on start (configurable)
-  - Via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Verified live 2026-10-03 (`wpctl status` marks AirMic as default). The previous default is not restored on exit.
+  - Via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Verified live 2026-10-03 (`wpctl status` marks AirMic as default). D4.6 restores the previous default on exit.
 - [ ] **D2.12** systemd user unit `packaging/airmicd.service`, start on login
   - `packaging/airmicd.service` written (`/usr/bin/airmicd`, restart on failure). Not installed or reboot-tested yet. Pairing has landed, so the daemon now starts without `--no-auth`. For a dev install, a drop-in overriding `ExecStart` to the built binary works; ask the user first.
 
@@ -120,6 +120,7 @@ Subcommands on the `airmicd` binary, so the release ships one binary. Each one i
 - [ ] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
 - [ ] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path
 - [ ] **D4.6** Restore the previous default source on exit (known issue 3)
+  - Written 2026-10-09: the first `make_default` (start or IPC) records the configured default, and exit on SIGINT, SIGTERM or a sink failure writes it back, only while AirMic is still the default. When none was set, or it was already AirMic after a crash, it deletes the key so WirePlumber picks one. Unit tests cover the restore decision. Not live tested: the user's own daemon was running and owns the "airmic" node. Live check: note `pw-metadata 0 default.configured.audio.source`, start and stop the daemon, confirm the value is back.
 - [x] **D4.7** Exit cleanly when PipeWire is unreachable, without the Tokio panic (known issue 4)
   - Cause: the status poller ran `pw-metadata` inside `block_in_place`, so its task outlived runtime shutdown and then touched a timer. Now `spawn_blocking`. Verified 2026-10-09: 20 runs with an empty `PIPEWIRE_RUNTIME_DIR` all exit 1 with only the error (before: 2 panics in 3 runs).
 - [x] **D4.8** Firewall hint: phone connected on TCP but no UDP → log a warning and show it in `status` with the command to open the port

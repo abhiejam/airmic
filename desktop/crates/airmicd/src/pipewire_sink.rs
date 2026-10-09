@@ -1,5 +1,7 @@
 //! PipeWire backend: a virtual source node "airmic" that apps see as a microphone.
 
+use std::sync::{Arc, OnceLock};
+
 use airmic_proto::SAMPLE_RATE;
 use anyhow::Context;
 use pipewire as pw;
@@ -15,7 +17,8 @@ pub const NODE_NAME: &str = "airmic";
 const DEFAULT_SOURCE_KEY: &str = "default.configured.audio.source";
 
 pub struct PipeWireSink {
-    pub set_default_source: bool,
+    /// Set to make AirMic the default input once the node exists.
+    pub default_source: Option<Arc<PipeWireDefault>>,
 }
 
 impl AudioSink for PipeWireSink {
@@ -100,8 +103,8 @@ impl AudioSink for PipeWireSink {
             &mut params,
         )?;
         info!("PipeWire source \"{NODE_NAME}\" created");
-        if self.set_default_source {
-            match set_default_source() {
+        if let Some(default_source) = &self.default_source {
+            match default_source.make_default() {
                 Ok(()) => info!("AirMic set as the default microphone"),
                 Err(e) => warn!("could not set the default microphone: {e:#}"),
             }
@@ -112,38 +115,85 @@ impl AudioSink for PipeWireSink {
     }
 }
 
-/// Reads and sets the default input through `pw-metadata`.
-pub struct PipeWireDefault;
+/// Reads and sets the default input through `pw-metadata`. Remembers the default it replaced,
+/// so `restore_previous` can put it back on exit.
+#[derive(Default)]
+pub struct PipeWireDefault {
+    /// The configured default before AirMic first took over, `None` inside when none was set.
+    previous: OnceLock<Option<String>>,
+}
 
 impl DefaultSource for PipeWireDefault {
     fn is_default(&self) -> bool {
-        let out = std::process::Command::new("pw-metadata")
-            .args(["0", DEFAULT_SOURCE_KEY])
-            .output();
-        out.is_ok_and(|out| {
-            configured_source_name(&String::from_utf8_lossy(&out.stdout)).as_deref()
-                == Some(NODE_NAME)
-        })
+        read_configured_source().is_ok_and(|value| value.as_deref().is_some_and(names_airmic))
     }
 
     fn make_default(&self) -> anyhow::Result<()> {
-        set_default_source()
+        if self.previous.get().is_none() {
+            let _ = self.previous.set(read_configured_source()?);
+        }
+        let value = format!(r#"{{ "name": "{NODE_NAME}" }}"#);
+        run_pw_metadata(&["0", DEFAULT_SOURCE_KEY, &value, "Spa:String:JSON"]).map(drop)
     }
 }
 
-/// Returns the node name in a `pw-metadata` listing line such as
-/// `update: id:0 key:'…' value:'{"name":"airmic"}' type:'Spa:String:JSON'`.
-fn configured_source_name(listing: &str) -> Option<String> {
-    let value = listing.split("value:'").nth(1)?.split("' type:").next()?;
-    let value: serde_json::Value = serde_json::from_str(value).ok()?;
-    Some(value.get("name")?.as_str()?.to_string())
+impl PipeWireDefault {
+    /// Puts back the default input AirMic replaced, unless the user has picked another since.
+    pub fn restore_previous(&self) -> anyhow::Result<()> {
+        let Some(previous) = self.previous.get() else {
+            return Ok(());
+        };
+        let current = read_configured_source()?;
+        match plan_default_restore(previous.as_deref(), current.as_deref()) {
+            Restore::Keep => Ok(()),
+            Restore::Clear => run_pw_metadata(&["-d", "0", DEFAULT_SOURCE_KEY]).map(drop),
+            Restore::Set(value) => {
+                run_pw_metadata(&["0", DEFAULT_SOURCE_KEY, value, "Spa:String:JSON"]).map(drop)
+            }
+        }
+    }
 }
 
-/// Makes AirMic the default input by node name, which survives node id changes across restarts.
-fn set_default_source() -> anyhow::Result<()> {
-    let value = format!(r#"{{ "name": "{NODE_NAME}" }}"#);
+#[derive(Debug, PartialEq)]
+enum Restore<'a> {
+    Keep,
+    Clear,
+    Set(&'a str),
+}
+
+/// Decides what to write back on exit from the configured default before start and now.
+fn plan_default_restore<'a>(previous: Option<&'a str>, current: Option<&str>) -> Restore<'a> {
+    if !current.is_some_and(names_airmic) {
+        return Restore::Keep;
+    }
+    match previous {
+        Some(value) if !names_airmic(value) => Restore::Set(value),
+        // Nothing was set, or AirMic was left over from a crash: let WirePlumber choose.
+        _ => Restore::Clear,
+    }
+}
+
+/// Returns the raw JSON value of the configured default input, or `None` when none is set.
+fn read_configured_source() -> anyhow::Result<Option<String>> {
+    let listing = run_pw_metadata(&["0", DEFAULT_SOURCE_KEY])?;
+    Ok(configured_source_value(&listing).map(str::to_string))
+}
+
+/// Returns the value in a `pw-metadata` listing line such as
+/// `update: id:0 key:'…' value:'{"name":"airmic"}' type:'Spa:String:JSON'`.
+fn configured_source_value(listing: &str) -> Option<&str> {
+    listing.split("value:'").nth(1)?.split("' type:").next()
+}
+
+fn names_airmic(value: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(value)
+        .is_ok_and(|v| v.get("name").and_then(|n| n.as_str()) == Some(NODE_NAME))
+}
+
+/// Runs `pw-metadata` with `args` and returns its stdout.
+fn run_pw_metadata(args: &[&str]) -> anyhow::Result<String> {
     let out = std::process::Command::new("pw-metadata")
-        .args(["0", DEFAULT_SOURCE_KEY, &value, "Spa:String:JSON"])
+        .args(args)
         .output()
         .context("running pw-metadata")?;
     anyhow::ensure!(
@@ -151,7 +201,7 @@ fn set_default_source() -> anyhow::Result<()> {
         "pw-metadata failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    Ok(())
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(test)]
@@ -159,12 +209,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_the_configured_source_name() {
+    fn reads_the_configured_source_value() {
         let line = r#"update: id:0 key:'default.configured.audio.source' value:'{ "name": "airmic" }' type:'Spa:String:JSON'"#;
-        assert_eq!(configured_source_name(line).as_deref(), Some("airmic"));
+        let value = configured_source_value(line).unwrap();
+        assert_eq!(value, r#"{ "name": "airmic" }"#);
+        assert!(names_airmic(value));
+        assert!(!names_airmic(r#"{"name":"alsa_input.usb-mic"}"#));
         assert_eq!(
-            configured_source_name("Found \"default\" metadata 38\n"),
+            configured_source_value("Found \"default\" metadata 38\n"),
             None
+        );
+    }
+
+    const AIRMIC: &str = r#"{"name":"airmic"}"#;
+    const USB_MIC: &str = r#"{"name":"alsa_input.usb-mic"}"#;
+
+    #[test]
+    fn restores_the_previous_default_while_airmic_is_still_default() {
+        assert_eq!(
+            plan_default_restore(Some(USB_MIC), Some(AIRMIC)),
+            Restore::Set(USB_MIC)
+        );
+    }
+
+    #[test]
+    fn keeps_a_default_the_user_picked_while_the_daemon_ran() {
+        let other = r#"{"name":"bluez_input.headset"}"#;
+        assert_eq!(
+            plan_default_restore(Some(USB_MIC), Some(other)),
+            Restore::Keep
+        );
+        assert_eq!(plan_default_restore(None, None), Restore::Keep);
+    }
+
+    #[test]
+    fn clears_the_default_when_none_was_set_or_airmic_was_left_from_a_crash() {
+        assert_eq!(plan_default_restore(None, Some(AIRMIC)), Restore::Clear);
+        assert_eq!(
+            plan_default_restore(Some(AIRMIC), Some(AIRMIC)),
+            Restore::Clear
         );
     }
 }
