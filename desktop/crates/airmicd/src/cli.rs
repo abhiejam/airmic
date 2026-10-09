@@ -143,6 +143,18 @@ fn render_status(status: &Value) -> String {
         let flowing = status["audio_flowing"].as_bool().unwrap_or(false);
         line("Audio", if flowing { "arriving" } else { "not arriving" });
     }
+    if status["audio_blocked"].as_bool().unwrap_or(false) {
+        let port = status["audio_port"]
+            .as_u64()
+            .map_or("<audio port>".into(), |p| p.to_string());
+        line(
+            "Hint",
+            &format!(
+                "the phone is connected but no audio arrives. If a firewall is on, run \
+                 `sudo ufw allow {port}/udp`. Wi-Fi AP isolation or a guest network can also block it."
+            ),
+        );
+    }
     if let Some(stats) = status["stats"].as_object() {
         let number = |key: &str| stats.get(key).and_then(Value::as_f64).unwrap_or(0.0);
         line("Latency", &format!("{:.0} ms", number("latency_ms")));
@@ -260,7 +272,9 @@ mod tests {
             "stats": {"loss_pct": 1.25, "jitter_ms": 2.1, "latency_ms": 48.0},
             "audio_flowing": true,
             "is_default_source": false,
-            "firewall_hint": "sudo ufw allow 47801/udp",
+            "audio_blocked": true,
+            "audio_port": 47801,
+            "future_note": "from a newer daemon",
             "version": "0.1.0",
         });
         let text = render_status(&status);
@@ -272,7 +286,8 @@ mod tests {
         assert!(text.contains("Latency:     48 ms"), "{text}");
         assert!(text.contains("Loss:        1.2%"), "{text}");
         assert!(text.contains("airmicd make-default"), "{text}");
-        assert!(text.contains("sudo ufw allow 47801/udp"), "{text}");
+        assert!(text.contains("`sudo ufw allow 47801/udp`"), "{text}");
+        assert!(text.contains("from a newer daemon"), "{text}");
     }
 
     #[test]
