@@ -3,6 +3,9 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Builds the packages on PRs that touch packaging, without releasing.
+  pull_request:
+    paths: [".github/workflows/release.yml", "packaging/**", "install.sh"]
 
 permissions:
   contents: write
@@ -12,6 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - run: shellcheck install.sh packaging/build-deb.sh
       - run: sudo apt-get update && sudo apt-get install -y libpipewire-0.3-dev libclang-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -19,16 +23,32 @@ jobs:
           workspaces: desktop
       - run: cargo build --release --locked -p airmicd
         working-directory: desktop
-      - name: Package tarball
+      - name: Package tarball and .deb
         run: |
           version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_TYPE" = tag ] || version="0.0.0~pr${{ github.event.number }}"
           dir="airmic-${version}-x86_64-linux"
-          mkdir "$dir"
+          mkdir -p "$dir" dist
           cp desktop/target/release/airmicd packaging/airmicd.service README.md LICENSE "$dir/"
-          tar czf "$dir.tar.gz" "$dir"
-          sha256sum "$dir.tar.gz" > "$dir.tar.gz.sha256"
-          echo "ARCHIVE=$dir.tar.gz" >> "$GITHUB_ENV"
+          tar czf "dist/$dir.tar.gz" "$dir"
+          packaging/build-deb.sh "$version" desktop/target/release/airmicd dist
+          (cd dist && for f in *; do sha256sum "$f" > "$f.sha256"; done)
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+      - name: Check the .deb installs
+        run: |
+          sudo apt-get install -y ./dist/*.deb
+          airmicd --version
+          test -L /etc/systemd/user/default.target.wants/airmicd.service
+          sudo apt-get remove -y airmic
+          test ! -e /etc/systemd/user/default.target.wants/airmicd.service
+      - if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: dist/
       - name: Create draft release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "AirMic $GITHUB_REF_NAME" --generate-notes "$ARCHIVE" "$ARCHIVE.sha256"
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "AirMic $GITHUB_REF_NAME" --generate-notes dist/*
