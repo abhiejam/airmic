@@ -30,6 +30,12 @@ const STATUS_EVERY: Duration = Duration::from_secs(2);
 const LEVEL_EVERY: Duration = Duration::from_millis(50);
 const LEVEL_STALE_AFTER: Duration = Duration::from_millis(200);
 const FLOWING_WITHIN: Duration = Duration::from_secs(2);
+// Short in tests so a status notification arrives within `recv`'s 5 s timeout.
+const AUDIO_BLOCKED_AFTER: Duration = if cfg!(test) {
+    Duration::from_secs(1)
+} else {
+    Duration::from_secs(5)
+};
 
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
@@ -103,6 +109,8 @@ pub struct Status {
     phone: Option<Phone>,
     stats: Option<StreamStats>,
     audio_flowing: bool,
+    audio_blocked: bool,
+    audio_port: u16,
     is_default_source: bool,
     version: &'static str,
 }
@@ -216,6 +224,8 @@ pub struct Ipc {
     default_source: Box<dyn DefaultSource>,
     config_path: PathBuf,
     config: Mutex<Config>,
+    /// The UDP port bound at start; `config.audio_port` may hold a change pending a restart.
+    audio_port: u16,
     pairing: PairingContext,
     status: watch::Sender<Status>,
     notifications: broadcast::Sender<Notification>,
@@ -238,22 +248,24 @@ impl Ipc {
             last_packet,
             default_source,
             config_path,
+            audio_port: config.audio_port,
             config: Mutex::new(config),
             pairing,
             status: watch::Sender::new(idle_status()),
             notifications: broadcast::channel(64).0,
             refresh_status: Notify::new(),
         });
-        ipc.status.send_replace(ipc.build_status(false));
+        ipc.status.send_replace(ipc.build_status(false, false));
         ipc
     }
 
-    fn build_status(&self, is_default_source: bool) -> Status {
+    fn build_status(&self, is_default_source: bool, audio_blocked: bool) -> Status {
         let last_packet = *self.last_packet.lock().expect("last packet lock");
         let audio_flowing = last_packet.is_some_and(|t| t.elapsed() < FLOWING_WITHIN);
         let Some(session) = self.session.borrow().clone() else {
             return Status {
                 audio_flowing,
+                audio_port: self.audio_port,
                 is_default_source,
                 ..idle_status()
             };
@@ -272,6 +284,8 @@ impl Ipc {
             // Null until the first 2 s stats window closes.
             stats: session.stats,
             audio_flowing,
+            audio_blocked,
+            audio_port: self.audio_port,
             is_default_source,
             version: env!("CARGO_PKG_VERSION"),
         }
@@ -423,6 +437,8 @@ fn idle_status() -> Status {
         phone: None,
         stats: None,
         audio_flowing: false,
+        audio_blocked: false,
+        audio_port: 0,
         is_default_source: false,
         version: env!("CARGO_PKG_VERSION"),
     }
@@ -471,20 +487,67 @@ pub async fn serve<L: IpcListener>(mut listener: L, ipc: Arc<Ipc>) {
     }
 }
 
+/// Watches one session for its first audio packet, to spot a firewall that blocks UDP.
+struct SessionAudio {
+    id: u32,
+    started: std::time::Instant,
+    warned: bool,
+}
+
+impl SessionAudio {
+    /// Returns whether the session has been ready for `AUDIO_BLOCKED_AFTER` without one packet.
+    /// Logs the fix once per session, and again when audio finally arrives.
+    fn check_blocked(&mut self, last_packet: Option<std::time::Instant>, audio_port: u16) -> bool {
+        let arrived = last_packet.is_some_and(|t| t >= self.started);
+        if arrived {
+            if self.warned {
+                info!("session {:#010x}: audio is arriving now", self.id);
+                self.warned = false;
+            }
+            return false;
+        }
+        let blocked = self.started.elapsed() >= AUDIO_BLOCKED_AFTER;
+        if blocked && !self.warned {
+            self.warned = true;
+            warn!(
+                "session {:#010x}: no audio on UDP {audio_port} after {} s. A firewall may be \
+                 blocking it (open it with `sudo ufw allow {audio_port}/udp`), or the Wi-Fi \
+                 network isolates its clients (AP isolation)",
+                self.id,
+                AUDIO_BLOCKED_AFTER.as_secs()
+            );
+        }
+        blocked
+    }
+}
+
 /// Rebuilds the status on every session change and once a second. Sends the `status`
 /// notification when anything but `stats` changed, and every 2 s while a phone is connected.
 async fn publish_status(ipc: Arc<Ipc>) {
     let mut session = ipc.session.clone();
     let mut tick = interval(POLL_EVERY);
     let mut last_sent = Instant::now();
+    let mut audio: Option<SessionAudio> = None;
     loop {
         tokio::select! {
             _ = tick.tick() => {}
             _ = ipc.refresh_status.notified() => {}
             changed = session.changed() => if changed.is_err() { return },
         }
+        let session_id = session.borrow().as_ref().map(|s| s.id);
+        if session_id != audio.as_ref().map(|a| a.id) {
+            audio = session_id.map(|id| SessionAudio {
+                id,
+                started: std::time::Instant::now(),
+                warned: false,
+            });
+        }
+        let last_packet = *ipc.last_packet.lock().expect("last packet lock");
+        let audio_blocked = audio
+            .as_mut()
+            .is_some_and(|a| a.check_blocked(last_packet, ipc.audio_port));
         let is_default = tokio::task::block_in_place(|| ipc.default_source.is_default());
-        let new = ipc.build_status(is_default);
+        let new = ipc.build_status(is_default, audio_blocked);
         let old = ipc.status.send_replace(new.clone());
         let changed = Status { stats: None, ..old }
             != Status {
@@ -834,6 +897,27 @@ mod tests {
 
         *daemon.last_packet.lock().unwrap() = Some(std::time::Instant::now());
         recv_status(&mut app, |s| s["audio_flowing"] == true).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn session_without_audio_is_reported_blocked_until_a_packet_arrives() {
+        let daemon = start_daemon().await;
+        let mut app = daemon.connect().await;
+        call(&mut app, "subscribe", json!({"topics": ["status"]})).await;
+        // A packet from before this session does not count as its audio.
+        *daemon.last_packet.lock().unwrap() = Some(std::time::Instant::now());
+        daemon.start_session(false);
+        let status = recv_status(&mut app, |s| s["state"] == "streaming").await;
+        assert_eq!(status["audio_blocked"], false, "too early to tell");
+        assert_eq!(status["audio_port"], Config::default().audio_port);
+
+        recv_status(&mut app, |s| s["audio_blocked"] == true).await;
+        *daemon.last_packet.lock().unwrap() = Some(std::time::Instant::now());
+        recv_status(&mut app, |s| s["audio_blocked"] == false).await;
+
+        daemon.session.send_replace(None);
+        let idle = recv_status(&mut app, |s| s["state"] == "idle").await;
+        assert_eq!(idle["audio_blocked"], false);
     }
 
     #[tokio::test(flavor = "multi_thread")]
