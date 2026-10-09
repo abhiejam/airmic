@@ -18,7 +18,46 @@ You need three things:
 
 ### 1. Install the daemon on Linux
 
-Download `airmic-<version>-x86_64-linux.tar.gz` from the [latest release](https://github.com/abhiejam/airmic/releases/latest). Then unpack it and put `airmicd` somewhere it will stay:
+Run this as your normal user (not with sudo):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/abhiejam/airmic/main/install.sh | sh
+```
+
+Ubuntu doesn't ship `curl` by default. If it's missing, use `wget` instead:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/abhiejam/airmic/main/install.sh | sh
+```
+
+The script downloads the latest release and checks its checksum. It puts `airmicd` in `~/.local/bin` and runs `airmicd install`. That sets up a systemd user service, so the daemon starts each time you log in. Run the same command again to update.
+
+Check that it runs:
+
+```sh
+airmicd status
+```
+
+If your shell can't find `airmicd`, log out and back in so `~/.local/bin` joins your `PATH`, or use `~/.local/bin/airmicd`.
+
+<details>
+<summary>Or install the .deb package</summary>
+
+Download `airmic_<version>_amd64.deb` from the [latest release](https://github.com/abhiejam/airmic/releases/latest), then:
+
+```sh
+sudo apt install ./airmic_*_amd64.deb
+systemctl --user start airmicd
+```
+
+The package puts `airmicd` in `/usr/bin` and starts the service at every user's login. After an upgrade, run `systemctl --user restart airmicd`. Remove it with `sudo apt remove airmic`. Don't also run `airmicd install` with the package.
+
+</details>
+
+<details>
+<summary>Or install by hand</summary>
+
+Download `airmic-<version>-x86_64-linux.tar.gz` from the [latest release](https://github.com/abhiejam/airmic/releases/latest), then:
 
 ```sh
 tar xzf airmic-*-x86_64-linux.tar.gz
@@ -27,15 +66,20 @@ cp airmic-*/airmicd ~/.local/bin/
 ~/.local/bin/airmicd install
 ```
 
-`airmicd install` writes a systemd user service for the binary at its current path, enables it and starts it. The daemon then starts each time you log in. If you move the binary later, run `airmicd install` again.
+If you move the binary later, run `airmicd install` again.
 
-Check that it runs:
+</details>
 
-```sh
-airmicd status
+### Or let an AI agent install it
+
+If you use a coding agent such as Claude Code, Codex or Cursor, paste this into it:
+
+```text
+Install AirMic on this Linux computer by following
+https://raw.githubusercontent.com/abhiejam/airmic/main/docs/agent-install.md
 ```
 
-If your shell can't find `airmicd`, use the full path `~/.local/bin/airmicd`, or log out and back in so `~/.local/bin` joins your `PATH`.
+The agent installs the daemon, checks it runs and gives you the pairing code. It asks before anything that needs sudo.
 
 ### 2. Install the iPhone app
 
