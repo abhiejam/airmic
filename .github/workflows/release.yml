@@ -29,16 +29,16 @@ jobs:
           [ "$GITHUB_REF_TYPE" = tag ] || version="0.0.0~pr${{ github.event.number }}"
           dir="airmic-${version}-x86_64-linux"
           mkdir -p "$dir" dist
-          cp desktop/target/release/airmicd packaging/airmicd.service README.md LICENSE "$dir/"
+          cp desktop/target/release/airmic packaging/airmicd.service README.md LICENSE "$dir/"
           tar czf "dist/$dir.tar.gz" "$dir"
-          packaging/build-deb.sh "$version" desktop/target/release/airmicd dist
+          packaging/build-deb.sh "$version" desktop/target/release/airmic dist
           (cd dist && for f in *; do sha256sum "$f" > "$f.sha256"; done)
           dpkg-deb --info dist/*.deb
           dpkg-deb --contents dist/*.deb
       - name: Check the .deb installs
         run: |
           sudo apt-get install -y ./dist/*.deb
-          airmicd --version
+          airmic --version
           test -L /etc/systemd/user/default.target.wants/airmicd.service
           sudo apt-get remove -y airmic
           test ! -e /etc/systemd/user/default.target.wants/airmicd.service
