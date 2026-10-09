@@ -1,0 +1,25 @@
+name: Feedback
+description: Tell us how AirMic worked for you, and whether you'd pay for an App Store build.
+title: "Feedback: "
+labels: [feedback]
+body:
+  - type: dropdown
+    id: pay
+    attributes:
+      label: Would you pay for an App Store build of the iPhone app?
+      description: It would remove the need for a Mac, Xcode and the 7 day re-sign.
+      options:
+        - "Yes"
+        - Maybe, depending on the price
+        - "No"
+    validations:
+      required: true
+  - type: input
+    id: price
+    attributes:
+      label: What would you pay, if anything?
+  - type: textarea
+    id: notes
+    attributes:
+      label: How did it go?
+      description: What you use it for, what worked, what didn't.
