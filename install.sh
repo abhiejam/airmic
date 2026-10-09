@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the latest airmicd release for the current user and starts it as a systemd user service.
+# Installs the latest airmic release for the current user and starts it as a systemd user service.
 #   curl -fsSL https://raw.githubusercontent.com/abhiejam/airmic/main/install.sh | sh
 #   wget -qO- https://raw.githubusercontent.com/abhiejam/airmic/main/install.sh | sh
 # AIRMIC_VERSION=v1.0.0 picks a release, AIRMIC_BIN_DIR the install folder (default ~/.local/bin).
@@ -23,11 +23,11 @@ else
     fail "needs curl or wget"
 fi
 
-[ "$(uname -s)" = Linux ] || fail "airmicd runs on Linux only"
+[ "$(uname -s)" = Linux ] || fail "airmic runs on Linux only"
 [ "$(uname -m)" = x86_64 ] || fail "there is no release for $(uname -m) yet. Build from source: see the README"
-[ "$(id -u)" -ne 0 ] || fail "run this as your normal user, not root: airmicd is a per-user service"
+[ "$(id -u)" -ne 0 ] || fail "run this as your normal user, not root: airmic is a per-user service"
 command -v systemctl >/dev/null 2>&1 || fail "needs systemd"
-command -v pw-cli >/dev/null 2>&1 || echo "airmic: warning: PipeWire tools not found. airmicd needs PipeWire." >&2
+command -v pw-cli >/dev/null 2>&1 || echo "airmic: warning: PipeWire tools not found. airmic needs PipeWire." >&2
 
 version="${AIRMIC_VERSION:-$(latest_tag)}"
 case "$version" in
@@ -49,16 +49,16 @@ upgrading=false
 [ -f "$unit" ] && upgrading=true
 
 mkdir -p "$bin_dir"
-install -m 755 "$tmp/airmic-${version#v}-x86_64-linux/airmicd" "$bin_dir/airmicd"
-echo "Installed $bin_dir/airmicd"
+install -m 755 "$tmp/airmic-${version#v}-x86_64-linux/airmic" "$bin_dir/airmic"
+echo "Installed $bin_dir/airmic"
 
-"$bin_dir/airmicd" install
-# `airmicd install` leaves an unchanged unit alone, so the old binary would keep running.
+"$bin_dir/airmic" install
+# `airmic install` leaves an unchanged unit alone, so the old binary would keep running.
 if $upgrading; then
     systemctl --user restart airmicd
 fi
 
 case ":$PATH:" in
     *":$bin_dir:"*) ;;
-    *) echo "Note: $bin_dir is not on your PATH yet. Log out and back in, or run $bin_dir/airmicd directly." ;;
+    *) echo "Note: $bin_dir is not on your PATH yet. Log out and back in, or run $bin_dir/airmic directly." ;;
 esac
