@@ -5,6 +5,7 @@ Source files exported from the Claude Design canvases. The canvases are the livi
 | Folder | Canvas | Contents |
 |---|---|---|
 | `mockups/` | [AirMic iPhone mockups](https://claude.ai/artifact/SFuouTH2921fG9QzJidshH) | Home (streaming, muted, no computer), Connect, Summary, light and dark |
+| `readme/` | (from `mockups/`) | `phones.html`: the dark streaming and muted screens as plain HTML. `render.sh` turns it into `docs/images/airmic-iphone.gif` for the README |
 | `logo/` | [AirMic logo concepts](https://claude.ai/artifact/J6CQZq1NW4ka29idedE5Ga) | 7 concepts + OnAirMic.com lockups; **chosen: 1 · Signal** (`Main.dc.html`) |
 
 ## Using these files
