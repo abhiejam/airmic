@@ -157,11 +157,14 @@ Done when: on a clean Ubuntu VM, install the `.deb`, open the app, pair the phon
 - [ ] **D7.1** 2 h soak with `airmic-send` and with the phone; memory and CPU flat
 - [ ] **D7.2** Measure end to end latency (target < 150 ms) and idle CPU (< 1%)
 - [ ] **D7.3** Run the end to end checklist (PRD §12) on the desktop side
-- [ ] **D7.4** README: install, pair, troubleshooting (firewall, AP isolation, default device)
+- [x] **D7.4** README: install, pair, troubleshooting (firewall, AP isolation, default device)
+  - Written against the D4 subcommand names. Re-check the CLI reference and the firewall hint wording once D4 lands.
   - The iPhone sideload guide already exists (`docs/ios-install.md`, M7.5). Make it prominent in the install steps and state that a Mac with Xcode is needed for now.
 - [ ] **D7.5** GitHub release v1.0: `airmicd` x86_64 Linux tarball with the unit file and README
   - `.deb` and AppImage move to v2 with D5.10.
-- [ ] **D7.6** Open source prep: contributing notes, issue templates, and a feedback ask in the README ("would you pay for an App Store build?")
+  - `.github/workflows/release.yml` builds the tarball (plus a `.sha256`) and creates a draft release on a `v*` tag. No tag pushed yet.
+- [x] **D7.6** Open source prep: contributing notes, issue templates, and a feedback ask in the README ("would you pay for an App Store build?")
+  - `CONTRIBUTING.md`; bug report, feature request and feedback forms in `.github/ISSUE_TEMPLATE/`. The README feedback ask links the feedback form (Discussions may not be enabled).
 
 ## Later (v2)
 - [ ] **L.1** Dictation: study `whisrs`, Wayland text injection, push-to-talk from phone, desktop hotkey
