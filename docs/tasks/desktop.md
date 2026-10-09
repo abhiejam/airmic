@@ -114,10 +114,12 @@ Done when: phone discovers the PC, pairs with the code, reconnects with its toke
 
 ## D4 · CLI (v1)
 Subcommands on the `airmicd` binary, so the release ships one binary. Each one is a thin client over the IPC calls in `docs/ipc.md`. Plain `airmicd` still runs the daemon.
-- [ ] **D4.1** `airmicd status`: phone name, connected or idle, muted, latency, loss, whether AirMic is the default mic
+- [x] **D4.1** `airmicd status`: phone name, connected or idle, muted, latency, loss, whether AirMic is the default mic
+  - Code in `crates/airmicd/src/cli.rs`. The CLI honours `AIRMIC_SOCKET` like the app.
 - [ ] **D4.2** `airmicd pair`: print the 4 digit code and a terminal QR code, and wait until the phone pairs or the code expires
 - [ ] **D4.3** `airmicd devices` and `airmicd forget <id>`
-- [ ] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
+- [x] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
+  - `make-default` is tested against a fake daemon only, so the live run left the default mic alone.
 - [ ] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path
 - [ ] **D4.6** Restore the previous default source on exit (known issue 3)
   - Written 2026-10-09: the first `make_default` (start or IPC) records the configured default, and exit on SIGINT, SIGTERM or a sink failure writes it back, only while AirMic is still the default. When none was set, or it was already AirMic after a crash, it deletes the key so WirePlumber picks one. Unit tests cover the restore decision. Not live tested: the user's own daemon was running and owns the "airmic" node. Live check: note `pw-metadata 0 default.configured.audio.source`, start and stop the daemon, confirm the value is back.

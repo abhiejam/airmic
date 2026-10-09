@@ -1,3 +1,4 @@
+mod cli;
 mod config;
 mod control;
 mod ipc;
@@ -40,6 +41,9 @@ struct Args {
     /// Config file. Default: ~/.config/airmic/config.toml
     #[arg(long)]
     config: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<cli::Command>,
 }
 
 #[tokio::main]
@@ -54,6 +58,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let args = Args::parse();
+    if let Some(command) = args.command {
+        return cli::run(command).await;
+    }
     let config_dir = config::config_dir()?;
     let config_path = args
         .config
