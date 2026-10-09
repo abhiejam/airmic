@@ -116,8 +116,10 @@ Done when: phone discovers the PC, pairs with the code, reconnects with its toke
 Subcommands on the `airmicd` binary, so the release ships one binary. Each one is a thin client over the IPC calls in `docs/ipc.md`. Plain `airmicd` still runs the daemon.
 - [x] **D4.1** `airmicd status`: phone name, connected or idle, muted, latency, loss, whether AirMic is the default mic
   - Code in `crates/airmicd/src/cli.rs`. The CLI honours `AIRMIC_SOCKET` like the app.
-- [ ] **D4.2** `airmicd pair`: print the 4 digit code and a terminal QR code, and wait until the phone pairs or the code expires
-- [ ] **D4.3** `airmicd devices` and `airmicd forget <id>`
+- [x] **D4.2** `airmicd pair`: print the 4 digit code and a terminal QR code, and wait until the phone pairs or the code expires
+  - QR via the `qrcode` crate without default features (no dependencies). It is drawn light on dark for a dark terminal and has not been scanned with the real phone yet.
+- [x] **D4.3** `airmicd devices` and `airmicd forget <id>`
+  - `forget` also takes a unique start of the id.
 - [x] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
   - `make-default` is tested against a fake daemon only, so the live run left the default mic alone.
 - [ ] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path

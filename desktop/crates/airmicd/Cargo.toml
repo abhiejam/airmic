@@ -14,6 +14,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["sink
 gethostname = "1.1.0"
 mdns-sd = "0.21.4"
 pipewire = { version = "0.10.1", features = ["v0_3_49"] }
+qrcode = { version = "0.14.1", default-features = false }
 rand = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
