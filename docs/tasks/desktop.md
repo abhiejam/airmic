@@ -24,29 +24,35 @@ v1 ships as an open source release of the daemon with a small CLI, not the Tauri
 - **Deferred to v2:** D5 (desktop app) and D6 (transcription, so S4 waits too).
 - **Dropped:** D2.10 (pipewire-rs works).
 
-## Status and handover (2026-10-03)
+## Status and handover (2026-10-09)
 
-Read this before starting desktop work. Everything below was checked on this machine on 2026-10-03; re-check anything you rely on.
+Read this before starting desktop work. Everything below was checked on this machine on 2026-10-03, and the CLI v1 state on 2026-10-09; re-check anything you rely on.
 
 **Works end to end with the real iPhone:** discovery (mDNS), pairing with the 4 digit code from the daemon log, token reconnect, streaming into PipeWire, Claude Code `/voice` dictation through AirMic, mute, Wi-Fi blip recovery. S1, S2 and S3 are done. PC-side results: [`docs/notes/m1.md`](../notes/m1.md).
+
+**CLI v1 (2026-10-09):** all of D4 is merged (PRs #45 to #49), plus the README, release workflow and open source prep (#44). `airmicd` now has `status`, `pair`, `devices`, `forget`, `make-default`, `install` and `uninstall`. These parts are tested against test daemons and fakes only, and still need a live check with the real phone and machine:
+- D4.6 restore of the previous default mic on exit.
+- D2.12 / D4.5 real `airmicd install` and a reboot.
+- D4.2 scanning the terminal QR code with the iPhone. It reads as a normal QR on a dark terminal and inverted on a light one, which the app's AVFoundation scanner may not read.
+- D4.4 `airmicd make-default` against the real PipeWire.
 
 **Known issues, in priority order**
 1. **Audio underruns (D2.6).** The phone stream has about 10 underruns and 23 dropped frames per minute on `main` (each a short gap). Jitter is low (~1.7 ms), so the cause is bursty arrival, drift, or both. Branch `desktop/jitter-target` (pushed, no PR) sizes the target from the worst arrival delay over 10 s: it fixes a synthetic 80 ms stall test, but on the real phone it only cut underruns to ~6/min while the target sat at the 120 ms cap, so it is not the whole answer. Investigated 2026-10-03 with `AIRMIC_PACKET_TRACE=<file> airmicd` and `tools/analyze-packet-trace.py`: the cause is Wi-Fi link stalls, not clock drift (about -14 ppm). Details and numbers in [`docs/notes/underruns.md`](../notes/underruns.md). **Low priority** (the user has not heard it while dictating with `/voice`). Options if it is picked up again: Ethernet for the PC, a higher target cap (160 ms would prevent about 23 of 28 underruns in the capture, at that much latency), or concealing short gaps. Do not merge `desktop/jitter-target` as is.
 2. **Phone drops the session right after reconnecting to a restarted daemon** (mobile track). The daemon log shows `session … ready` then `ended` 2.5 s later with no error, so the phone closes it cleanly. A prompt with this evidence was handed to the iOS session. Desktop needs no change.
-3. The daemon sets AirMic as the default source on start and does not restore the previous default on exit. Fix written in D4.6, live check pending.
+3. ~~The daemon sets AirMic as the default source on start and does not restore the previous default on exit.~~ Fixed in D4.6, live check pending.
 4. ~~If PipeWire is unreachable at start, the daemon exits with the right error but also prints a Tokio "context is being shutdown" panic.~~ Fixed in D4.7.
 5. `docs/notes/iphone-linux-checklist.md` (mobile's file) uses `pactl`, `avahi-browse` and `sudo ufw`, none of which work here, and its `clock.quantum` read shows 1024 while the graph runs at 480 (`pw-top` shows the real value).
 
-**Next, in order (CLI-first v1, see above):** D4 CLI and fixes for issues 3 and 4 → D2.12 install and reboot test (ask the user before installing anything) → D7.
+**Next, in order (CLI-first v1, see above):** the live checks listed under "CLI v1" (ask the user before installing anything or touching the default mic) → D7.1 to D7.3 with the phone → push a `v1.0.0` tag for the draft release (D7.5) → make the GitHub repo public (it is private now).
 
 **This machine:** Ubuntu 24.04.5, PipeWire 1.0.5, WirePlumber 0.4.17, Rust 1.99. `pactl` and `avahi-browse` are not installed; use `pw-cli`, `pw-dump`, `wpctl`, `pw-metadata`, `pw-top`. ufw is installed but disabled. LAN IP 192.168.20.42 on `wlp3s0`, hostname `nuc`. The user's own default mic is not AirMic: never change it (or install units, or use sudo) without asking, and restore it after a test.
 
 **Running and testing**
-- Real run: `cd desktop && cargo build --release -p airmicd && ./target/release/airmicd` (pairing on; the code appears in the log as `pairing code NNNN`). `--no-auth` skips pairing. `airmic-send --port <p> --seconds N [--loss 5 --jitter 20 --reorder 2]` plays the phone.
+- Real run: `cd desktop && cargo build --release -p airmicd && ./target/release/airmicd` (pairing on). In another shell, `./target/release/airmicd pair` prints the code and QR; the code also appears in the log as `pairing code NNNN`. `--no-auth` skips pairing. `airmic-send --port <p> --seconds N [--loss 5 --jitter 20 --reorder 2]` plays the phone.
 - For test daemons use spare ports and keep the default mic alone: a scratch `config.toml` with `control_port`, `audio_port` (e.g. 47860/47861) and `set_default_source = false`, passed with `--config`.
 - A test `XDG_RUNTIME_DIR` must give a socket path under 108 bytes, and then PipeWire needs `PIPEWIRE_RUNTIME_DIR=/run/user/1000` to still find its own socket.
 - Record what apps hear: `pw-record --target airmic --rate 48000 --channels 1 out.wav`.
-- Before each PR: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` (53 tests on `main`).
+- Before each PR: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` (81 tests on `main`).
 
 **Workflow:** see "Branches, stacks and conflicts" in `CLAUDE.md`. Each PR is merged with "Rebase and merge", so restack open branches after every merge. `gh` here must use `GH_TOKEN=$(gh auth token --user abhiejam)`. No `Co-Authored-By` lines.
 
@@ -117,7 +123,7 @@ Subcommands on the `airmicd` binary, so the release ships one binary. Each one i
 - [x] **D4.1** `airmicd status`: phone name, connected or idle, muted, latency, loss, whether AirMic is the default mic
   - Code in `crates/airmicd/src/cli.rs`. The CLI honours `AIRMIC_SOCKET` like the app.
 - [x] **D4.2** `airmicd pair`: print the 4 digit code and a terminal QR code, and wait until the phone pairs or the code expires
-  - QR via the `qrcode` crate without default features (no dependencies). It is drawn light on dark for a dark terminal and has not been scanned with the real phone yet.
+  - QR via the `qrcode` crate without default features (no dependencies). It reads as a normal QR on a dark terminal and inverted on a light one. Not scanned with the real phone yet.
 - [x] **D4.3** `airmicd devices` and `airmicd forget <id>`
   - `forget` also takes a unique start of the id.
 - [x] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
@@ -129,7 +135,7 @@ Subcommands on the `airmicd` binary, so the release ships one binary. Each one i
 - [x] **D4.7** Exit cleanly when PipeWire is unreachable, without the Tokio panic (known issue 4)
   - Cause: the status poller ran `pw-metadata` inside `block_in_place`, so its task outlived runtime shutdown and then touched a timer. Now `spawn_blocking`. Verified 2026-10-09: 20 runs with an empty `PIPEWIRE_RUNTIME_DIR` all exit 1 with only the error (before: 2 panics in 3 runs).
 - [x] **D4.8** Firewall hint: phone connected on TCP but no UDP → log a warning and show it in `status` with the command to open the port
-  - Daemon side: IPC `status` has `audio_blocked` (no packet 5 s after `ready`) and `audio_port`; the warning with `sudo ufw allow <port>/udp` is logged once per session. Showing it in `airmicd status` is D4.1.
+  - IPC `status` has `audio_blocked` (no packet 5 s after `ready`) and `audio_port`; the warning with `sudo ufw allow <port>/udp` is logged once per session. `airmicd status` prints it as a Hint line.
 
 Done when: on a clean Ubuntu machine, unpack the release, run `airmicd install` and `airmicd pair`, pair the phone, and dictate through AirMic. It still works after a reboot.
 
@@ -163,7 +169,7 @@ Done when: on a clean Ubuntu VM, install the `.deb`, open the app, pair the phon
 - [ ] **D7.2** Measure end to end latency (target < 150 ms) and idle CPU (< 1%)
 - [ ] **D7.3** Run the end to end checklist (PRD §12) on the desktop side
 - [x] **D7.4** README: install, pair, troubleshooting (firewall, AP isolation, default device)
-  - Written against the D4 subcommand names. Re-check the CLI reference and the firewall hint wording once D4 lands.
+  - Checked against the merged D4 code on 2026-10-09: subcommand names, `pair` expiry, `forget` disconnecting, `uninstall` keeping pairings, the firewall hint. The release binary needs Ubuntu 24.04 or glibc 2.39, and the README says so.
   - The iPhone sideload guide already exists (`docs/ios-install.md`, M7.5). Make it prominent in the install steps and state that a Mac with Xcode is needed for now.
 - [ ] **D7.5** GitHub release v1.0: `airmicd` x86_64 Linux tarball with the unit file and README
   - `.deb` and AppImage move to v2 with D5.10.
