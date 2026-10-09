@@ -16,6 +16,14 @@ Legend: `[ ]` todo, `[x]` done. **Unblocks** = a mobile task waiting on this. **
 
 Do S1 and S2 first: they are what lets both tracks run in parallel.
 
+## v1 scope: CLI first (decided 2026-10-09)
+
+v1 ships as an open source release of the daemon with a small CLI, not the Tauri app. The goal is to gauge interest cheaply. iPhone users sideload the app from Xcode (free Apple ID, re-sign every 7 days). An App Store build and the desktop app follow only if v1 gets traction.
+
+- **v1:** D2.12, D4, D7.
+- **Deferred to v2:** D5 (desktop app) and D6 (transcription, so S4 waits too).
+- **Dropped:** D2.10 (pipewire-rs works).
+
 ## Status and handover (2026-10-03)
 
 Read this before starting desktop work. Everything below was checked on this machine on 2026-10-03; re-check anything you rely on.
@@ -29,7 +37,7 @@ Read this before starting desktop work. Everything below was checked on this mac
 4. If PipeWire is unreachable at start, the daemon exits with the right error but also prints a Tokio "context is being shutdown" panic.
 5. `docs/notes/iphone-linux-checklist.md` (mobile's file) uses `pactl`, `avahi-browse` and `sudo ufw`, none of which work here, and its `clock.quantum` read shows 1024 while the graph runs at 480 (`pw-top` shows the real value).
 
-**Next, in order:** D5 desktop app in its own session against `docs/ipc.md` → underrun investigation (issue 1) → D2.12 install and reboot test (ask the user before installing anything).
+**Next, in order (CLI-first v1, see above):** D4 CLI and fixes for issues 3 and 4 → D2.12 install and reboot test (ask the user before installing anything) → D7.
 
 **This machine:** Ubuntu 24.04.5, PipeWire 1.0.5, WirePlumber 0.4.17, Rust 1.99. `pactl` and `avahi-browse` are not installed; use `pw-cli`, `pw-dump`, `wpctl`, `pw-metadata`, `pw-top`. ufw is installed but disabled. LAN IP 192.168.20.42 on `wlp3s0`, hostname `nuc`. The user's own default mic is not AirMic: never change it (or install units, or use sudo) without asking, and restore it after a test.
 
@@ -78,8 +86,8 @@ Done when: CI green on an empty workspace, protocol doc agreed.
   - Pull model: `AudioSink::run` reads from the jitter buffer at the device clock, so it has no `write`. Underruns are counted in the jitter buffer stats.
 - [x] **D2.9** PipeWire backend: virtual source `node.name=airmic`, `node.description=AirMic`, silence when no phone
   - `media.class` is `Audio/Source`, not `Audio/Source/Virtual`: WirePlumber 0.4.17 (Ubuntu 24.04) never creates ports for the virtual class. Requests 10 ms periods (`node.latency=480/48000`).
-- [ ] **D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)
-  - Not needed so far: pipewire-rs 0.10 works on PipeWire 1.0.5.
+- [ ] ~~**D2.10** Fallback backend: `module-pipe-source` FIFO (if pipewire-rs gives trouble)~~
+  - Dropped for v1: pipewire-rs 0.10 works on PipeWire 1.0.5.
 - [x] **D2.11** Set AirMic as default source by name on start (configurable)
   - Via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Verified live 2026-10-03 (`wpctl status` marks AirMic as default). The previous default is not restored on exit.
 - [ ] **D2.12** systemd user unit `packaging/airmicd.service`, start on login
@@ -104,7 +112,20 @@ Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, a
 
 Done when: phone discovers the PC, pairs with the code, reconnects with its token; `airmic-send` covers the same in tests.
 
-## D5 · Desktop app (Tauri)
+## D4 · CLI (v1)
+Subcommands on the `airmicd` binary, so the release ships one binary. Each one is a thin client over the IPC calls in `docs/ipc.md`. Plain `airmicd` still runs the daemon.
+- [ ] **D4.1** `airmicd status`: phone name, connected or idle, muted, latency, loss, whether AirMic is the default mic
+- [ ] **D4.2** `airmicd pair`: print the 4 digit code and a terminal QR code, and wait until the phone pairs or the code expires
+- [ ] **D4.3** `airmicd devices` and `airmicd forget <id>`
+- [ ] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
+- [ ] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path
+- [ ] **D4.6** Restore the previous default source on exit (known issue 3)
+- [ ] **D4.7** Exit cleanly when PipeWire is unreachable, without the Tokio panic (known issue 4)
+- [ ] **D4.8** Firewall hint: phone connected on TCP but no UDP → log a warning and show it in `status` with the command to open the port
+
+Done when: on a clean Ubuntu machine, unpack the release, run `airmicd install` and `airmicd pair`, pair the phone, and dictate through AirMic. It still works after a reboot.
+
+## D5 · Desktop app (Tauri), deferred to v2
 - [x] **D5.1** Scaffold Tauri v2 + React + TS + Vite in `desktop/app`
   - `desktop/app/src-tauri` has its own `[workspace]`, so the daemon's `cargo ... --workspace` CI does not need the webkit libraries. App CI is the `app` job in `desktop.yml`.
   - Run: `cd desktop/app && npm ci && npm run tauri dev`. Set `AIRMIC_SOCKET` to talk to a test daemon instead of `$XDG_RUNTIME_DIR/airmic.sock`.
@@ -122,7 +143,7 @@ Done when: phone discovers the PC, pairs with the code, reconnects with its toke
 
 Done when: on a clean Ubuntu VM, install the `.deb`, open the app, pair the phone, use the mic, with no terminal.
 
-## D6 · Transcription
+## D6 · Transcription, deferred to v2
 - [ ] **D6.1** `whisper-rs` behind a cargo feature; model download (`base.en` default, `small.en` option) with progress
 - [ ] **D6.2** Simple voice activity detection to cut chunks on silence
 - [ ] **D6.3** Transcript stream over IPC; Transcript screen in the app (scroll, copy, clear)
@@ -134,7 +155,10 @@ Done when: on a clean Ubuntu VM, install the `.deb`, open the app, pair the phon
 - [ ] **D7.2** Measure end to end latency (target < 150 ms) and idle CPU (< 1%)
 - [ ] **D7.3** Run the end to end checklist (PRD §12) on the desktop side
 - [ ] **D7.4** README: install, pair, troubleshooting (firewall, AP isolation, default device)
-- [ ] **D7.5** GitHub release v1.0 with `.deb` and AppImage
+  - The iPhone sideload guide already exists (`docs/ios-install.md`, M7.5). Make it prominent in the install steps and state that a Mac with Xcode is needed for now.
+- [ ] **D7.5** GitHub release v1.0: `airmicd` x86_64 Linux tarball with the unit file and README
+  - `.deb` and AppImage move to v2 with D5.10.
+- [ ] **D7.6** Open source prep: contributing notes, issue templates, and a feedback ask in the README ("would you pay for an App Store build?")
 
 ## Later (v2)
 - [ ] **L.1** Dictation: study `whisrs`, Wayland text injection, push-to-talk from phone, desktop hotkey

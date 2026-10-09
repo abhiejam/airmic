@@ -23,11 +23,15 @@ Existing mic-streaming apps cap free streaming at 1 hour, show 2 minute ads, and
 1. Stream iPhone mic audio to Linux (Ubuntu, PipeWire, GNOME) with low latency (< 150 ms mouth to app).
 2. Show up as a normal input device, set as default automatically, selectable by name.
 3. Keep streaming with the iPhone screen locked, for hours, with no time limits and no ads.
-4. Zero CLI setup on the desktop: install a package, open the app, scan or type a code.
+4. Simple desktop setup from the terminal: unpack the release, `airmicd install`, `airmicd pair`, type the code on the phone.
 5. Calm, focused iPhone UI: one big mic, sleek mute, focus session timer, session summary.
-6. Live transcript in the desktop app.
+6. Open source release. The iPhone app is sideloaded from Xcode (free Apple ID, re-signed every 7 days).
+
+v1 is CLI first (decided 2026-10-09): it tests interest before the larger desktop app and App Store work. The desktop app, transcription and an App Store build follow if v1 gets traction.
 
 ### Later (v2+)
+- Desktop app (Tauri, §8.3) with zero CLI setup: install a package, open the app, scan or type a code.
+- Live transcript (§8.2) in the desktop app and on the phone.
 - System-wide dictation into the focused text box (Wayland), superwhisper style.
 - Opus encoding, macOS and Windows receivers, TestFlight / App Store.
 
@@ -42,8 +46,8 @@ Existing mic-streaming apps cap free streaming at 1 hour, show 2 minute ads, and
 Primary user: a developer at a desk with a Linux machine who wants a good mic for voice coding, dictation and calls, without buying hardware.
 
 ### Flow A: first-time setup
-1. Install AirMic on Linux (`.deb` or AppImage). The desktop app opens and starts the background service.
-2. Desktop app shows "Waiting for your phone" with a QR code and a 4 digit pairing code.
+1. Install AirMic on Linux: unpack the release and run `airmicd install`, which enables the background service. (v2: a `.deb` or AppImage, and the desktop app starts the service.)
+2. `airmicd pair` prints a QR code and a 4 digit pairing code in the terminal. (v2: the desktop app shows them.)
 3. Install the iPhone app (sideloaded from Xcode for now). Grant microphone and Local Network permission.
 4. Phone lists nearby computers (Bonjour). User taps one and enters the 4 digit code, or scans the QR.
 5. Paired. Phone remembers the computer; desktop remembers the phone.
@@ -220,13 +224,13 @@ Visual system: SF Pro (system font), cream `#F6F2EA` light / `#111114` dark, acc
 - **Config:** `~/.config/airmic/config.toml` (ports, default device, transcription on/off, model).
 - **Logs:** journald.
 
-### 8.2 Transcriber (in daemon, optional feature)
+### 8.2 Transcriber (in daemon, optional feature), v2
 - `whisper-rs` (whisper.cpp), model `base.en` by default, `small.en` optional, downloaded on first enable.
 - Taps the same audio, splits on silence with a simple voice activity detector, transcribes chunks.
 - Sends text to the desktop app (IPC) and to the phone (`transcript` message) for word count and "Last thing you said".
 - Off by default if the machine is slow; CPU only in v1.
 
-### 8.3 Desktop app (Tauri v2)
+### 8.3 Desktop app (Tauri v2), v2
 - Front end: TypeScript, React, Vite. Same visual language as the phone (system sans, cream / dark, indigo accent).
 - Talks only to `airmicd` over the Unix socket (Rust side of Tauri), never to the phone directly.
 - Screens:
@@ -237,7 +241,8 @@ Visual system: SF Pro (system font), cream `#F6F2EA` light / `#111114` dark, acc
 - Tray icon with connected / muted state. Closing the window keeps the daemon running.
 
 ### 8.4 Packaging
-- `.deb` and AppImage from the Tauri bundler. The package installs `airmicd` and the systemd user unit; the app enables the service on first launch.
+- v1: x86_64 Linux tarball with `airmicd`, the systemd user unit and the README. `airmicd install` enables the unit. `airmicd status` shows the firewall hint.
+- v2: `.deb` and AppImage from the Tauri bundler. The package installs `airmicd` and the systemd user unit; the app enables the service on first launch.
 - Firewall: document `ufw allow 47800/tcp` and `47801/udp`; the desktop app detects a blocked port (phone sees the computer but no audio arrives) and shows the command.
 
 ## 9. Dictation (v2)

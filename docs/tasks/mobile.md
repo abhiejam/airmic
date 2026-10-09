@@ -12,7 +12,7 @@ Legend: `[ ]` todo, `[x]` done. **Needs** = blocked by a task in the other track
 | S1 | `docs/protocol.md` + `docs/protocol/vectors.json` frozen | M2.1 header and message codecs | D0.4 |
 | S2 | Control server running without pairing (`airmicd --no-auth`) | M2.4 control client testing | D3.1 |
 | S3 | Pairing + Bonjour advert | M3.1, M3.3 | D3.3, D3.4 |
-| S4 | `transcript` messages | M6.1 | D6.4 |
+| S4 | `transcript` messages (v2) | M6.1 | D6.4 |
 
 Until S2 lands, test audio with the zero-code Linux receiver (D1.1) and the control client against `tools/mock_control.py` (M2.5).
 
@@ -129,7 +129,7 @@ Done when: every mockup screen exists in light and dark and works with real data
 
 ## M6 · Transcript on phone
 - [x] **M6.1** Handle `transcript {text, final}`; word count into `SessionStore` (needs S4)
-  - Final lines only; partials ignored. `Transcript.wordCount` counts runs with a letter or digit. Words stay nil (shown as —) until a transcript arrives. Tested with `mock_control.py --transcripts`; real test waits for D6.4.
+  - Final lines only; partials ignored. `Transcript.wordCount` counts runs with a letter or digit. Words stay nil (shown as —) until a transcript arrives. Tested with `mock_control.py --transcripts`; real test waits for D6.4, which moved to v2 (CLI-first v1, PRD §2).
 - [x] **M6.2** "Last thing you said" on Summary from the last final transcript
   - From `StreamSession.lastTranscript`, saved on `FocusSession`.
 
