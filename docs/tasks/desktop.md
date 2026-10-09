@@ -48,7 +48,7 @@ Read this before starting desktop work. Everything below was checked on this mac
 - Record what apps hear: `pw-record --target airmic --rate 48000 --channels 1 out.wav`.
 - Before each PR: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` (53 tests on `main`).
 
-**Workflow:** see "Branches, stacks and conflicts" in `CLAUDE.md`. Each PR is merged with "Rebase and merge", so restack open branches after every merge. `gh` here must use `GH_TOKEN=$(gh auth token --user abhiejam)`. No `Co-Authored-By` lines.
+**Workflow:** see "Branches, stacks and conflicts" in `AGENTS.md`. Each PR is merged with "Rebase and merge", so restack open branches after every merge. `gh` here must use `GH_TOKEN=$(gh auth token --user abhiejam)`. No `Co-Authored-By` lines.
 
 ---
 

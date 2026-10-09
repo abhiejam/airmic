@@ -39,7 +39,7 @@ Read this before starting mobile work. Checked on 2026-10-03; re-check anything 
 - Fake computer: `python3 tools/mock_control.py [--pair 0427] [--transcripts] [--wav FILE] [--drop-after S] [--name NAME]`. It advertises over Bonjour and prints the QR link with `--pair`. `--wav` records the user's voice: delete those files after testing.
 - Never play sound on the Mac (`say`, `afplay`) without asking first.
 
-**Workflow:** see "Branches, stacks and conflicts" in `CLAUDE.md`: a `git worktree` per branch, branch off fresh `origin/main`, PRs merged with "Rebase and merge" (sync local `main` with `git pull --rebase` after a merge). Mobile commits end with the `Co-Authored-By` line.
+**Workflow:** see "Branches, stacks and conflicts" in `AGENTS.md`: a `git worktree` per branch, branch off fresh `origin/main`, PRs merged with "Rebase and merge" (sync local `main` with `git pull --rebase` after a merge). Mobile commits end with the `Co-Authored-By` line.
 
 ---
 
