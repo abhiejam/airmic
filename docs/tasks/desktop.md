@@ -91,7 +91,7 @@ Done when: CI green on an empty workspace, protocol doc agreed.
 - [x] **D2.11** Set AirMic as default source by name on start (configurable)
   - Via `pw-metadata` (`default.configured.audio.source`), config `set_default_source` (default true). Verified live 2026-10-03 (`wpctl status` marks AirMic as default). D4.6 restores the previous default on exit.
 - [ ] **D2.12** systemd user unit `packaging/airmicd.service`, start on login
-  - `packaging/airmicd.service` written (`/usr/bin/airmicd`, restart on failure). Not installed or reboot-tested yet. Pairing has landed, so the daemon now starts without `--no-auth`. For a dev install, a drop-in overriding `ExecStart` to the built binary works; ask the user first.
+  - `packaging/airmicd.service` written (`/usr/bin/airmicd`, restart on failure). Pairing has landed, so the daemon now starts without `--no-auth`. `airmicd install` (D4.5) writes it with `ExecStart` set to the running binary. Real install and reboot test pending user approval: `airmicd install`, reboot, log in, `airmicd status`.
 
 Done when: `airmic-send` with 5% loss sounds clean through the "AirMic" input, and it survives a reboot.
 
@@ -122,7 +122,8 @@ Subcommands on the `airmicd` binary, so the release ships one binary. Each one i
   - `forget` also takes a unique start of the id.
 - [x] **D4.4** `airmicd make-default`, plus a hint in `status` when AirMic is not the default
   - `make-default` is tested against a fake daemon only, so the live run left the default mic alone.
-- [ ] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path
+- [x] **D4.5** `airmicd install` and `airmicd uninstall`: write and enable or remove the systemd user unit from D2.12 for the current binary path
+  - `src/install.rs` renders `packaging/airmicd.service` via `include_str!`. Re-running is safe; a unit for another binary is replaced and restarted. `install --dry-run` prints the unit. Unit-tested against a temp dir with a fake systemctl; a real install is pending user approval (see D2.12).
 - [ ] **D4.6** Restore the previous default source on exit (known issue 3)
   - Written 2026-10-09: the first `make_default` (start or IPC) records the configured default, and exit on SIGINT, SIGTERM or a sink failure writes it back, only while AirMic is still the default. When none was set, or it was already AirMic after a crash, it deletes the key so WirePlumber picks one. Unit tests cover the restore decision. Not live tested: the user's own daemon was running and owns the "airmic" node. Live check: note `pw-metadata 0 default.configured.audio.source`, start and stop the daemon, confirm the value is back.
 - [x] **D4.7** Exit cleanly when PipeWire is unreachable, without the Tokio panic (known issue 4)

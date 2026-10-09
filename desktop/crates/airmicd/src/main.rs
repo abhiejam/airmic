@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod control;
+mod install;
 mod ipc;
 mod jitter;
 mod mdns;
@@ -15,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::oneshot;
@@ -43,7 +44,21 @@ struct Args {
     config: Option<PathBuf>,
 
     #[command(subcommand)]
-    command: Option<cli::Command>,
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    #[command(flatten)]
+    Client(cli::Command),
+    /// Install and start airmicd as a systemd user service for this binary.
+    Install {
+        /// Print the unit and commands without changing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Stop airmicd and remove its systemd user service.
+    Uninstall,
 }
 
 #[tokio::main]
@@ -58,8 +73,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let args = Args::parse();
-    if let Some(command) = args.command {
-        return cli::run(command).await;
+    match args.command {
+        Some(Command::Client(command)) => return cli::run(command).await,
+        Some(Command::Install { dry_run }) => return install::install(dry_run),
+        Some(Command::Uninstall) => return install::uninstall(),
+        None => {}
     }
     let config_dir = config::config_dir()?;
     let config_path = args
