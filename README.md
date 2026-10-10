@@ -2,6 +2,8 @@
 
 Use your iPhone as a wireless microphone for your Linux computer.
 
+Want it on the App Store without building it yourself? [Join the waitlist](https://abhishekejam.com/airmic?ref=readme)
+
 <p align="center">
   <img src="docs/images/airmic-iphone.gif" width="600" alt="The AirMic iPhone app: on air and streaming with a live waveform, next to the muted screen">
 </p>
