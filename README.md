@@ -87,9 +87,26 @@ The agent installs the daemon, checks it runs and gives you the pairing code. It
 
 ### 2. Install the iPhone app
 
-Follow **[docs/ios-install.md](docs/ios-install.md)**. In short: open `ios/AirMic.xcodeproj` in Xcode, sign it with your free Apple ID and run it on your iPhone. No paid developer account is needed.
+You need a Mac with Xcode, a USB cable and a free Apple ID. No paid developer account. Plug the iPhone into the Mac and paste this into Terminal:
 
-Apps signed with a free Apple ID stop opening after **7 days**. To renew, plug the phone into the Mac and press **⌘R** in Xcode again. Your pairings are kept.
+```sh
+git clone https://github.com/abhiejam/airmic.git ~/airmic 2>/dev/null || git -C ~/airmic pull
+~/airmic/ios/install.sh
+```
+
+The script builds AirMic, signs it with your Apple ID and installs it on the phone. When you need to do something (sign in to Xcode, tap Trust, turn on Developer Mode) it prints **ACTION NEEDED** and stops; do it and run the script again. The script is new, so if it fails, please [open an issue](https://github.com/abhiejam/airmic/issues) with its output.
+
+Or paste this into your AI agent (Claude Code, Codex, Cursor):
+
+```text
+Install the AirMic iPhone app for me. Run
+`git clone https://github.com/abhiejam/airmic.git ~/airmic 2>/dev/null || git -C ~/airmic pull`,
+then run `~/airmic/ios/install.sh`. If it stops with ACTION NEEDED, tell me what to do
+in short, plain steps, wait until I say done, then run it again. Repeat until it prints
+DONE. If the build fails, read the log it names and help me fix it.
+```
+
+Apps signed with a free Apple ID stop opening after **7 days**. To renew, run `~/airmic/ios/install.sh` again. Your pairings are kept. To do it by hand in Xcode instead, see **[docs/ios-install.md](docs/ios-install.md)**.
 
 ### 3. Pair the phone
 
@@ -173,7 +190,8 @@ sudo ufw allow 47801/udp
 
 ### The app won't open on the iPhone
 
-The free signing has expired after 7 days. Run it from Xcode again, see [docs/ios-install.md](docs/ios-install.md#the-7-day-limit).
+- **"Untrusted Developer"** on first launch: on the iPhone, Settings → General → VPN & Device Management → your Apple ID → Trust.
+- **It opened before but won't now:** the free signing expired after 7 days. Run `~/airmic/ios/install.sh` again, see [docs/ios-install.md](docs/ios-install.md#the-7-day-limit).
 
 ## Feedback
 
