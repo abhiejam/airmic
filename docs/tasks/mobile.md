@@ -142,6 +142,7 @@ Done when: every mockup screen exists in light and dark and works with real data
   - Pipeline on branch `mobile/readme-screenshots-wip` (pushed, no PR, not run yet). See Status and handover.
 - [x] **M7.5** Sideload install guide in the README (free Apple ID, 7 day re-sign)
   - `docs/ios-install.md`, linked from the README.
+  - `ios/install.sh` builds, signs, installs and opens the app in one command; the README points to it (and to a prompt for AI agents).
 
 ## Later (v2)
 - [ ] **L.1** Live Activity on Lock Screen: timer and mute

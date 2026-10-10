@@ -7,6 +7,22 @@ AirMic isn't on the App Store yet. You build it from this repo and install it on
 - An iPhone on iOS 18 or later, and a USB cable.
 - An Apple ID (the free one you already have is fine).
 
+## Quick install (beta)
+Plug the iPhone into your Mac and paste this into Terminal:
+
+```sh
+git clone https://github.com/abhiejam/airmic.git ~/airmic 2>/dev/null || git -C ~/airmic pull
+~/airmic/ios/install.sh
+```
+
+The script checks Xcode, your Apple ID and the iPhone, then builds, installs and opens AirMic. When you need to do something (sign in to Xcode, tap Trust, turn on Developer Mode) it prints **ACTION NEEDED** and stops. Do that and run it again. Run it again every 7 days to renew the app. The script is new: if it fails, please open an issue with its output.
+
+**With an AI agent** (Claude Code, Cursor, Codex and so on), paste this:
+
+> Install the AirMic iPhone app for me. Run `git clone https://github.com/abhiejam/airmic.git ~/airmic 2>/dev/null || git -C ~/airmic pull`, then run `~/airmic/ios/install.sh`. If it stops with ACTION NEEDED, tell me what to do in short, plain steps, wait until I say done, then run it again. Repeat until it prints DONE. If the build fails, read the log it names and help me fix it.
+
+The steps below are the same thing done by hand in Xcode.
+
 ## One-time setup
 1. **Add your Apple ID to Xcode:** Xcode → Settings → Accounts → **+** → Apple ID. This creates a free "Personal Team".
 2. **Open the project:** `ios/AirMic.xcodeproj`. Select the **AirMic** target → **Signing & Capabilities** → set **Team** to *Your Name (Personal Team)*.
@@ -25,7 +41,7 @@ xcrun devicectl device install app --device <your iPhone> <DerivedData>/Build/Pr
 ```
 
 ## The 7 day limit
-Apps signed with a free Apple ID stop opening after **7 days**. To renew, plug the phone in and press **⌘R** in Xcode again. Your paired computers and session history are kept.
+Apps signed with a free Apple ID stop opening after **7 days**. To renew, run `ios/install.sh` again (or press **⌘R** in Xcode). After the first install over USB, the phone can stay unplugged if it is on the same Wi-Fi as the Mac. Your paired computers and session history are kept.
 
 Other free-account limits: at most 3 of your own apps on a device at once, and no TestFlight. AirMic needs nothing that a free account can't do: microphone, background audio, local network, Bonjour and the camera all work.
 
