@@ -199,7 +199,7 @@ sudo ufw allow 47801/udp
 
 AirMic v1 is a test of whether people want this. If you try it, please tell us how it went.
 
-Would you pay for an App Store build, so you don't need a Mac and Xcode or the 7 day re-sign? Please [answer in a feedback issue](https://github.com/abhiejam/airmic/issues/new?template=feedback.yml). Bugs and ideas are welcome there too: [open an issue](https://github.com/abhiejam/airmic/issues/new/choose).
+Want it on the App Store without building it yourself? [Join the waitlist](https://abhishekejam.com/airmic?ref=readme)
 
 ## Build from source
 
