@@ -201,6 +201,8 @@ AirMic v1 is a test of whether people want this. If you try it, please tell us h
 
 Want it on the App Store without building it yourself? [Join the waitlist](https://abhishekejam.com/airmic?ref=readme)
 
+Want the computer side on macOS or Windows instead of Linux? [Request it in an issue](https://github.com/abhiejam/airmic/issues/new?template=feature_request.yml&title=Desktop%20app%20for%20macOS%20or%20Windows) and say which one.
+
 ## Build from source
 
 The daemon needs Rust stable and the PipeWire development files:
